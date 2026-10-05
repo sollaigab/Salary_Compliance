@@ -26,7 +26,8 @@ def connect(path: Path = DB_PATH) -> sqlite3.Connection:
 # Colonne aggiunte dopo la prima versione dello schema: su un DB già esistente vanno aggiunte a mano
 LATER_COLUMNS = {
     "locations": {"region_code": "TEXT"},
-    "jobs": {"posted_date": "TEXT", "posting_period": "TEXT"},
+    "jobs": {"posted_date": "TEXT", "posting_period": "TEXT", "seniority_source": "TEXT",
+             "experience_years": "INTEGER"},
 }
 
 

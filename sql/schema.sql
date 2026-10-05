@@ -68,6 +68,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     department             TEXT,          -- come lo scrive l'ATS
     job_function           TEXT,          -- normalizzata: data, engineering, sales, marketing, finance, hr, legal, operations, ...
     seniority              TEXT,          -- intern, junior, mid, senior, lead, manager, director, executive
+    seniority_source       TEXT,          -- titolo / esperienza (dagli anni richiesti) / non_indicata
+    experience_years       INTEGER,       -- anni minimi di esperienza richiesti, se indicati
     contract_type          TEXT,          -- indeterminato, determinato, stage, apprendistato, freelance
     work_schedule          TEXT,          -- full_time, part_time
     workplace_type         TEXT,          -- onsite, hybrid, remote

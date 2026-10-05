@@ -41,7 +41,7 @@
         </label>
         <button type="reset" class="ghost">Azzera filtri</button>
       </form>
-      <p class="note">I dati sono aggregati per settore: nessuna azienda è identificabile. Le combinazioni con pochi annunci o poche aziende non vengono mostrate.</p>
+      <p class="note">I dati sono aggregati per settore e non mostrano le singole aziende. Le combinazioni con pochi annunci o poche aziende sono nascoste.</p>
     </section>
 
     <div id="results" class="results is-loading" aria-live="polite">
@@ -98,7 +98,7 @@
         </figure>
 
         <figure class="chart" id="chart-period">
-          <figcaption><h2>Prima e dopo la legge</h2><p>Per data di pubblicazione, su tutti gli annunci online. Quelli più vecchi non rappresentano il mercato di allora: vedi la metodologia.</p></figcaption>
+          <figcaption><h2>Prima e dopo la legge</h2><p>Per data di pubblicazione, su tutti gli annunci online. Gli annunci più vecchi ancora visibili non rappresentano il mercato di allora (vedi la metodologia).</p></figcaption>
           <div class="chart-body"></div>
           <details class="table-view"><summary>Vedi come tabella</summary><div></div></details>
         </figure>
@@ -109,7 +109,7 @@
 
     <section class="wrap block" id="dati">
       <h2>Scarica i dati</h2>
-      <p class="note">Le stesse celle aggregate che alimentano i grafici, con conteggi, quote e mediane. Una riga per periodo, settore e dimensione.</p>
+      <p class="note">Sono gli stessi dati aggregati dei grafici, con conteggi, quote e mediane: una riga per ogni combinazione di periodo, settore e dimensione.</p>
       <p class="download"><a href="data/aggregati.csv" download>aggregati.csv</a></p>
     </section>
 
@@ -118,9 +118,9 @@
       <div class="method-grid">
         <div>
           <h3>Fonti</h3>
-          <p>Annunci pubblicati sui siti carriere delle aziende, letti dalle API e dai feed pubblici dei sistemi di selezione (Greenhouse, Lever, Ashby, Workday, Workable, Recruitee, Teamtailor, Oracle Recruiting, SuccessFactors). Nessun login, nessun portale di annunci di terzi.</p>
+          <p>Gli annunci vengono dai siti carriere delle aziende, letti attraverso le API e i feed pubblici dei sistemi di selezione (Greenhouse, Lever, Ashby, Workday, Workable, Recruitee, Teamtailor, Oracle Recruiting, SuccessFactors). Non usiamo login né portali di annunci di terzi.</p>
           <h3>Regole di raccolta</h3>
-          <p>Rispettiamo robots.txt e le riserve sul text and data mining (art. 70-quater L. 633/1941), con richieste lente e interrotte se un servizio chiede una pausa. Il testo degli annunci non viene ripubblicato e i dati personali dei selezionatori non vengono salvati.</p>
+          <p>Rispettiamo robots.txt e le riserve sul text and data mining (art. 70-quater L. 633/1941). Le richieste sono distanziate e si fermano se un servizio chiede una pausa. Non ripubblichiamo il testo degli annunci e non salviamo i dati personali dei selezionatori.</p>
           <h3>Protezione delle aziende</h3>
           <p>Pubblichiamo solo dati aggregati per settore. Una combinazione compare se riunisce almeno <span data-meta="rules.min_jobs"></span> annunci di almeno <span data-meta="rules.min_companies"></span> aziende diverse e se nessuna azienda supera il <span data-meta="rules.max_share_pct"></span> degli annunci. Quando una sola combinazione di un gruppo è nascosta, nascondiamo anche la più piccola delle altre, perché non si possa ricavare per differenza.</p>
         </div>
@@ -131,7 +131,7 @@
           <ul>
             <li>Osserviamo solo gli annunci online dal <span data-meta="observed_from"></span>: quelli più vecchi ancora visibili non sono un campione del mercato prima della legge.</li>
             <li>Le aziende coperte sono <span data-meta="n_companies_active"></span> su <span data-meta="n_companies_seed"></span> analizzate: chi usa sistemi senza fonte pubblica è escluso, quindi i risultati descrivono queste aziende, non tutto il mercato.</li>
-            <li>La cifra viene estratta dal testo con regole automatiche, verificate a mano su un campione. La validazione è in corso.</li>
+            <li>La cifra e la seniority si ricavano dal testo con regole automatiche, che stiamo verificando a mano su un campione di annunci.</li>
             <li>La data di pubblicazione ha significati leggermente diversi tra i sistemi di selezione.</li>
           </ul>
         </div>

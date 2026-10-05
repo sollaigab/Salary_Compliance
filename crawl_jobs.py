@@ -26,7 +26,8 @@ from lib import db, http
 from lib import locations as loc
 from lib.ats_fetchers import FETCHERS, fetch_oracle, fetch_successfactors, fetch_workday
 from lib.enrich import (contract_type, description_lang, job_function, posted_date, posting_period,
-                        salary_fields, scrub_personal_data, seniority, work_schedule, workplace_type)
+                        salary_fields, scrub_personal_data, seniority_with_source, work_schedule,
+                        workplace_type)
 from lib.slugs import company_id_from_name
 
 DEFAULT_MAX_JOBS = 400   # per board: tetto di sicurezza sulle richieste di dettaglio
@@ -84,7 +85,7 @@ def build_row(job: dict, board: dict, index: loc.LocationIndex, now: str, first_
 
     description = scrub_personal_data(job["description"] or "")
     title = job["title"] or ""
-    level = seniority(title)
+    level, level_source, years = seniority_with_source(title, description)
     contract = contract_type(job["employment_type"], title, description)
     salary = salary_fields(job["salary_structured"], f"{title} {description}",
                            is_internship=(level == "intern" or contract == "stage"))
@@ -99,6 +100,8 @@ def build_row(job: dict, board: dict, index: loc.LocationIndex, now: str, first_
         "department": job["department"],
         "job_function": job_function(title, job["department"]),
         "seniority": level,
+        "seniority_source": level_source,
+        "experience_years": years,
         "contract_type": contract,
         "work_schedule": work_schedule(job["employment_type"], title, description),
         "workplace_type": workplace_type(job["workplace_type"], job["location"], description)
@@ -193,13 +196,15 @@ def reprocess(conn):
     for r in rows:
         title, description = r["title"] or "", r["description"] or ""
         structured = json.loads(r["salary_structured_json"]) if r["salary_structured_json"] else None
-        level = seniority(title)
+        level, level_source, years = seniority_with_source(title, description)
         contract = contract_type(None, title, description)
         salary = salary_fields(structured, f"{title} {description}",
                                is_internship=(level == "intern" or contract == "stage"))
         update = {
             "job_function": job_function(title, r["department"]),
             "seniority": level,
+            "seniority_source": level_source,
+            "experience_years": years,
             "contract_type": contract,
             "work_schedule": work_schedule(None, title, description),
             "description_lang": description_lang(description),

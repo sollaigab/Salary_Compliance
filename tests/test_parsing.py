@@ -365,3 +365,22 @@ def test_seniority_practice_e_grado():
     assert enrich.seniority("Chief Information Security Officer") == "executive"
     assert enrich.seniority("CFO") == "executive"
     assert enrich.seniority("Head of Brand") == "director"
+
+
+def test_anni_di_esperienza():
+    assert enrich.experience_years("Requisiti: Da 3 a 6 anni di esperienza nel ruolo") == 3
+    assert enrich.experience_years("Up to 3-4 years of experience as a business developer") == 3
+    assert enrich.experience_years("Esperienza di almeno 5 anni in contesti industriali") == 5
+    assert enrich.experience_years("At least 3 years of experience as a Backend Engineer") == 3
+    assert enrich.experience_years("Esperienza di 4+ anni in ruoli commerciali") == 4
+    assert enrich.experience_years("Expert-Senior level with [4-10 years] of professional experience") == 4
+    # storia dell'azienda, non requisito
+    assert enrich.experience_years("examplecorp, con quasi 150 anni di esperienza") is None
+    assert enrich.experience_years("With 85 years of experience in construction") is None
+
+
+def test_seniority_con_fonte():
+    assert enrich.seniority_with_source("Data Analyst", "Cerchiamo 1-2 anni di esperienza") == ("junior", "esperienza", 1)
+    assert enrich.seniority_with_source("Data Analyst", "almeno 6 anni di esperienza") == ("senior", "esperienza", 6)
+    assert enrich.seniority_with_source("Senior Data Analyst", "1 anno di esperienza")[:2] == ("senior", "titolo")
+    assert enrich.seniority_with_source("Data Analyst", "Ottimo team") == ("mid", "non_indicata", None)

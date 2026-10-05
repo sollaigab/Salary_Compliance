@@ -108,7 +108,7 @@ function gridlines(ticks, toPct) {
   return g;
 }
 
-const NO_DATA = "Non ci sono abbastanza annunci e aziende per mostrare questo dettaglio senza rendere riconoscibili le aziende.";
+const NO_DATA = "Con questi filtri gli annunci o le aziende sono troppo pochi: il dettaglio renderebbe riconoscibili le singole aziende.";
 
 function emptyChart(fig) {
   const p = document.createElement("p");

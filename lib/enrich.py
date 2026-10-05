@@ -63,6 +63,55 @@ def seniority(title: str) -> str:
     return classify(title or "") or "mid"
 
 
+# ---------------------------------------------------------------- seniority dagli anni di esperienza
+
+_YEARS = r"(?:anni|anno|years?|year's|yrs)"
+# numero isolato (non "15" dentro "150"), eventualmente seguito dall'estremo superiore della fascia
+_NUM_RANGE = r"(?<!\d)(\d{1,2})(?!\d)\s*(?:\+|-|–|\s+a\s+|\s+to\s+|\s+o\s+più|\s+or\s+more)?\s*(?:\d{1,2}(?!\d))?"
+EXPERIENCE_RES = [
+    # "3-5 anni di esperienza", "da 3 a 6 anni di esperienza", "4+ years of experience", "[4-10 years] of experience"
+    re.compile(rf"\b{_NUM_RANGE}\]?\s*{_YEARS}\b[^.;\n]{{0,40}}?(?:esperienz\w*|experience|seniority)", re.I),
+    # "esperienza di almeno 5 anni", "experience: 3-5 years", "esperienza superiore a 3 anni"
+    re.compile(rf"(?:esperienz\w*|experience|seniority)[^.;\n\d]{{0,40}}?{_NUM_RANGE}\s*{_YEARS}\b", re.I),
+    # "at least 3 years", "minimum of 4 years", "almeno 5 anni"
+    re.compile(rf"(?:at least|minimum(?: of)?|almeno|minimo(?: di)?)\s*(\d{{1,2}})(?!\d)\s*\+?\s*{_YEARS}\b", re.I),
+]
+MAX_PLAUSIBLE_YEARS = 15     # "150 anni di esperienza" è la storia dell'azienda, non un requisito
+
+
+def experience_years(text: str) -> int | None:
+    """Anni minimi di esperienza richiesti, se il testo li indica."""
+    for rx in EXPERIENCE_RES:
+        for m in rx.finditer(text or ""):
+            years = int(m.group(1))
+            if 0 < years <= MAX_PLAUSIBLE_YEARS:
+                return years
+    return None
+
+
+def seniority_from_years(years: int | None) -> str | None:
+    if years is None:
+        return None
+    if years < 2:
+        return "junior"
+    if years < 5:
+        return "mid"
+    return "senior"
+
+
+def seniority_with_source(title: str, description: str) -> tuple[str, str, int | None]:
+    """(livello, fonte, anni). Il titolo ha la precedenza; se non dice nulla, contano gli anni richiesti.
+    fonte: 'titolo' / 'esperienza' / 'non_indicata'."""
+    years = experience_years(description)
+    level = seniority(title)
+    if level != "mid" or re.search(r"\b(?:mid|intermedi\w*|middle)\b", normalize_text(title)):
+        return level, "titolo", years
+    from_years = seniority_from_years(years)
+    if from_years:
+        return from_years, "esperienza", years
+    return "mid", "non_indicata", years
+
+
 # ---------------------------------------------------------------- funzione aziendale
 
 FUNCTION_RULES = [
