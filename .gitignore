@@ -1,0 +1,13 @@
+# database e cache locali (si rigenerano con gli script)
+data/jobs.db
+data/jobs.db-*
+data/cache/
+__pycache__/
+.pytest_cache/
+*.pyc
+.venv/
+# export: il file DuckDB contiene le descrizioni integrali (privato)
+data/export/*.duckdb
+# campioni di validazione: contengono frasi degli annunci (privati)
+data/validation/
+data/logs/

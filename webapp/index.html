@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Osservatorio trasparenza retributiva</title>
+  <meta name="description" content="Quanti annunci di lavoro in Italia indicano la retribuzione dopo il D.Lgs. 96/2026, e quali RAL offrono, per settore, funzione e regione. Dati aggregati.">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <a class="brand" href="#">Osservatorio trasparenza retributiva</a>
+      <nav aria-label="Sezioni">
+        <a href="#risultati">Risultati</a>
+        <a href="#dati">Scarica i dati</a>
+        <a href="#metodo">Metodologia</a>
+      </nav>
+      <button class="theme-toggle" type="button" id="theme-toggle" aria-label="Cambia tema chiaro o scuro">Tema</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="wrap intro" id="risultati">
+      <h1>Quanti annunci di lavoro dicono quanto pagano</h1>
+      <p class="lede">Dal 7 giugno 2026 gli annunci devono indicare la retribuzione o la fascia. Qui misuriamo quanti lo fanno davvero e quanto offrono.</p>
+      <p class="stamp" id="stamp">Caricamento dei dati…</p>
+    </section>
+
+    <section class="wrap filters" aria-label="Filtri">
+      <form id="filters">
+        <label>Periodo
+          <select name="period">
+            <option value="post_legge">Pubblicati dal 7 giugno 2026</option>
+            <option value="tutti">Tutti gli annunci online</option>
+          </select>
+        </label>
+        <label class="wide">Settore
+          <select name="macro"><option value="tutti">Tutti i settori</option></select>
+        </label>
+        <button type="reset" class="ghost">Azzera filtri</button>
+      </form>
+      <p class="note">I dati sono aggregati per settore: nessuna azienda è identificabile. Le combinazioni con pochi annunci o poche aziende non vengono mostrate.</p>
+    </section>
+
+    <div id="results" class="results is-loading" aria-live="polite">
+      <section class="wrap headline">
+        <div class="hero-figure">
+          <p class="hero-value" id="kpi-pct">-</p>
+          <p class="hero-label">degli annunci indica la retribuzione</p>
+        </div>
+        <dl class="kpis">
+          <div><dt>RAL mediana</dt><dd id="kpi-ral">-</dd></div>
+          <div><dt>Annunci</dt><dd id="kpi-jobs">-</dd></div>
+          <div><dt>Aziende</dt><dd id="kpi-companies">-</dd></div>
+          <div><dt>Solo formula vaga</dt><dd id="kpi-vague">-</dd></div>
+        </dl>
+      </section>
+
+      <section class="wrap charts">
+        <figure class="chart" id="chart-macro">
+          <figcaption><h2>Annunci con retribuzione, per settore</h2><p>Quota sul totale degli annunci del settore. Il settore selezionato è evidenziato.</p></figcaption>
+          <div class="chart-body"></div>
+          <details class="table-view"><summary>Vedi come tabella</summary><div></div></details>
+        </figure>
+
+        <figure class="chart" id="chart-region">
+          <figcaption><h2>Annunci con retribuzione, per regione</h2><p>Quota sul totale degli annunci della regione.</p></figcaption>
+          <div class="chart-body"></div>
+          <details class="table-view"><summary>Vedi come tabella</summary><div></div></details>
+        </figure>
+
+        <figure class="chart" id="chart-function">
+          <figcaption><h2>RAL offerta, per funzione</h2><p>Mediana del minimo e del massimo della fascia, in euro lordi annui.</p></figcaption>
+          <ul class="legend" aria-label="Legenda">
+            <li><span class="key key-lo"></span>Minimo della fascia</li>
+            <li><span class="key key-hi"></span>Massimo della fascia</li>
+          </ul>
+          <div class="chart-body"></div>
+          <details class="table-view"><summary>Vedi come tabella</summary><div></div></details>
+        </figure>
+
+        <figure class="chart" id="chart-seniority">
+          <figcaption><h2>RAL offerta, per seniority</h2><p>Mediana del minimo e del massimo della fascia, in euro lordi annui.</p></figcaption>
+          <ul class="legend" aria-label="Legenda">
+            <li><span class="key key-lo"></span>Minimo della fascia</li>
+            <li><span class="key key-hi"></span>Massimo della fascia</li>
+          </ul>
+          <div class="chart-body"></div>
+          <details class="table-view"><summary>Vedi come tabella</summary><div></div></details>
+        </figure>
+
+        <figure class="chart" id="chart-contract">
+          <figcaption><h2>Annunci con retribuzione, per contratto</h2><p>Quota sul totale degli annunci con quel tipo di contratto.</p></figcaption>
+          <div class="chart-body"></div>
+          <details class="table-view"><summary>Vedi come tabella</summary><div></div></details>
+        </figure>
+
+        <figure class="chart" id="chart-period">
+          <figcaption><h2>Prima e dopo la legge</h2><p>Per data di pubblicazione, su tutti gli annunci online. Quelli più vecchi non rappresentano il mercato di allora: vedi la metodologia.</p></figcaption>
+          <div class="chart-body"></div>
+          <details class="table-view"><summary>Vedi come tabella</summary><div></div></details>
+        </figure>
+      </section>
+    </div>
+
+    <p class="wrap error" id="error" hidden></p>
+
+    <section class="wrap block" id="dati">
+      <h2>Scarica i dati</h2>
+      <p class="note">Le stesse celle aggregate che alimentano i grafici, con conteggi, quote e mediane. Una riga per periodo, settore e dimensione.</p>
+      <p class="download"><a href="data/aggregati.csv" download>aggregati.csv</a></p>
+    </section>
+
+    <section class="wrap block method" id="metodo">
+      <h2>Metodologia e limiti</h2>
+      <div class="method-grid">
+        <div>
+          <h3>Fonti</h3>
+          <p>Annunci pubblicati sui siti carriere delle aziende, letti dalle API e dai feed pubblici dei sistemi di selezione (Greenhouse, Lever, Ashby, Workday, Workable, Recruitee, Teamtailor, Oracle Recruiting, SuccessFactors). Nessun login, nessun portale di annunci di terzi.</p>
+          <h3>Regole di raccolta</h3>
+          <p>Rispettiamo robots.txt e le riserve sul text and data mining (art. 70-quater L. 633/1941), con richieste lente e interrotte se un servizio chiede una pausa. Il testo degli annunci non viene ripubblicato e i dati personali dei selezionatori non vengono salvati.</p>
+          <h3>Protezione delle aziende</h3>
+          <p>Pubblichiamo solo dati aggregati per settore. Una combinazione compare se riunisce almeno <span data-meta="rules.min_jobs"></span> annunci di almeno <span data-meta="rules.min_companies"></span> aziende diverse e se nessuna azienda supera il <span data-meta="rules.max_share_pct"></span> degli annunci. Quando una sola combinazione di un gruppo è nascosta, nascondiamo anche la più piccola delle altre, perché non si possa ricavare per differenza.</p>
+        </div>
+        <div>
+          <h3>Cosa misuriamo</h3>
+          <p>Un annuncio "indica la retribuzione" se riporta una cifra o una fascia, nel testo o nel campo dedicato del sistema di selezione. Le cifre mensili sono portate a RAL su 14 mensilità (12 per gli stage). L'analisi principale riguarda gli annunci pubblicati dal 7 giugno 2026.</p>
+          <h3>Limiti</h3>
+          <ul>
+            <li>Osserviamo solo gli annunci online dal <span data-meta="observed_from"></span>: quelli più vecchi ancora visibili non sono un campione del mercato prima della legge.</li>
+            <li>Le aziende coperte sono <span data-meta="n_companies_active"></span> su <span data-meta="n_companies_seed"></span> analizzate: chi usa sistemi senza fonte pubblica è escluso, quindi i risultati descrivono queste aziende, non tutto il mercato.</li>
+            <li>La cifra viene estratta dal testo con regole automatiche, verificate a mano su un campione. La validazione è in corso.</li>
+            <li>La data di pubblicazione ha significati leggermente diversi tra i sistemi di selezione.</li>
+          </ul>
+        </div>
+      </div>
+      <p class="note">Ultimo aggiornamento dei dati: <span data-meta="last_update"></span>.</p>
+    </section>
+  </main>
+
+  <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+</body>
+</html>

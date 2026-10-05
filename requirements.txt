@@ -1,0 +1,7 @@
+requests>=2.31
+requests-cache>=1.2
+playwright>=1.45
+pytest>=8
+duckdb>=1.1          # analisi SQL locale sul DB
+# opzionale: solo se si vuole caricare su BigQuery (fase 3)
+google-cloud-bigquery>=3.20
