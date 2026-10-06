@@ -1,9 +1,9 @@
 {
  "observed_from": "2026-10-04",
- "last_update": "2026-10-05",
- "n_jobs_active": 2443,
- "n_companies_active": 56,
- "n_companies_seed": 216,
+ "last_update": "2026-10-06",
+ "n_jobs_active": 2871,
+ "n_companies_active": 76,
+ "n_companies_seed": 290,
  "law_start": "2026-06-07",
  "rules": {
   "min_jobs": 5,

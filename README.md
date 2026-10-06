@@ -2,7 +2,7 @@
 
 Since 7 June 2026, Legislative Decree 96/2026 requires anyone who publishes a job ad in Italy to state the starting pay or a pay range. This project measures how well the rule is followed. It collects the ads published on the career sites of large companies hiring in Italy and counts how many give a figure, how many only use phrases like "pay commensurate with experience", and what salaries are offered by sector, function, seniority and region.
 
-The first collection ran on 4 October 2026: 216 companies analyzed, 56 with ads collected, about 2,400 ads in Italy. The results are published on a [web page](https://sollaigab.github.io/Salary_Compliance/) with data aggregated by sector, which does not allow anyone to trace them back to single companies.
+Collection started on 4 October 2026. As of 6 October: 290 companies analyzed, 76 with ads collected, about 2,900 ads in Italy. The results are published on a [web page](https://sollaigab.github.io/Salary_Compliance/) with data aggregated by sector, which does not allow anyone to trace them back to single companies.
 
 ## What the page shows
 
@@ -75,13 +75,13 @@ The public page contains no single ads, and no company names, titles or links. T
 - salary medians follow the same thresholds;
 - if only one combination in a group is hidden, the smallest of the others is hidden too, so it cannot be worked out by subtracting from the total.
 
-With the October 2026 data these rules hide about 350 of 770 combinations.
+With the October 2026 data these rules hide about 320 of 780 combinations.
 
 ## Limits
 
 - Collection started on 4 October 2026 and only sees the ads online from that day. Ads published before the law and still online do not represent the market of that time.
 - The publication date means slightly different things across ATSs: sometimes it is the first publication, sometimes a repost or the latest update.
-- The results describe the 56 companies with ads collected, not the whole Italian job market. Companies whose ATS has no public source are excluded.
+- The results describe the 76 companies with ads collected, not the whole Italian job market. Companies whose ATS has no public source are excluded.
 - Pay and seniority are extracted with automatic rules. Their accuracy is measured on a sample of ads checked by hand with `validate_salary.py`.
 
 ## How it was built
