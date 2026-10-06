@@ -54,25 +54,26 @@
 }
 
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; scroll-padding-top: 72px; }
+/* text grows a little on large screens: 16px on laptops, up to 19px on wide monitors */
+html { scroll-behavior: smooth; scroll-padding-top: 72px; font-size: clamp(16px, 0.45vw + 10.5px, 19px); }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
 body {
   margin: 0;
   background: var(--page);
   color: var(--ink);
-  font: 16px/1.55 var(--font);
+  font: 1rem/1.55 var(--font);
   -webkit-font-smoothing: antialiased;
 }
 
 a { color: var(--accent-ink); text-underline-offset: 2px; }
 h1, h2, h3 { line-height: 1.2; margin: 0; letter-spacing: -0.01em; }
-h1 { font-size: clamp(2rem, 4.2vw, 3.1rem); font-weight: 650; max-width: 20ch; }
+h1 { font-size: clamp(2rem, 3.6vw, 3.6rem); font-weight: 650; max-width: 18ch; }
 h2 { font-size: 1.25rem; font-weight: 620; }
 h3 { font-size: 1rem; font-weight: 620; margin-top: 1.25rem; }
 p { margin: 0; }
 
-.wrap { width: 100%; max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+.wrap { width: 100%; max-width: 1480px; margin: 0 auto; padding: 0 clamp(24px, 3vw, 56px); }
 @media (max-width: 767px) { .wrap { padding: 0 16px; } }
 
 /* top bar */
@@ -106,7 +107,13 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 
 /* intro */
 .intro { padding-top: 56px; padding-bottom: 24px; }
-.lede { margin-top: 16px; font-size: 1.15rem; color: var(--ink-2); max-width: 60ch; }
+.lede { margin-top: 16px; font-size: 1.2rem; color: var(--ink-2); max-width: 64ch; }
+/* wide screens: title on the left, intro text on the right, so the top uses the full width */
+@media (min-width: 1100px) {
+  .intro { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); column-gap: 64px; align-items: end; }
+  .intro h1 { grid-row: span 2; }
+  .intro .lede { margin-top: 0; }
+}
 .stamp { margin-top: 12px; color: var(--muted); font-size: 0.9rem; }
 
 /* filters: one row above everything they filter */
@@ -116,7 +123,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 #filters label.grow { flex: 1 1 200px; }
 #filters select, #filters input {
   background: var(--surface); border: 1px solid var(--axis);
-  padding: 6px 8px; font-size: 0.9rem; min-width: 0; max-width: 220px;
+  padding: 6px 8px; font-size: 0.9rem; min-width: 0; max-width: 280px;
 }
 #filters input { width: 100%; max-width: none; }
 #filters input::placeholder { color: var(--muted); }
@@ -153,7 +160,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 .charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 48px 40px; padding-bottom: 24px; }
 @media (max-width: 900px) { .charts { grid-template-columns: 1fr; } }
 .chart { margin: 0; min-width: 0; }
-.chart figcaption p { margin-top: 4px; color: var(--ink-2); font-size: 0.9rem; max-width: 60ch; }
+.chart figcaption p { margin-top: 4px; color: var(--ink-2); font-size: 0.9rem; max-width: 72ch; }
 .chart-body { margin-top: 16px; }
 
 .legend { list-style: none; display: flex; gap: 16px; padding: 0; margin: 12px 0 0; font-size: 0.85rem; color: var(--ink-2); }
@@ -225,7 +232,7 @@ table.data tbody tr:hover { background: var(--surface); }
 /* methodology */
 .method { padding-bottom: 80px; margin-top: 32px; border-top: 1px solid var(--ring); }
 .method-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px; margin-top: 8px; }
-.method-grid p, .method-grid li { color: var(--ink-2); max-width: 62ch; margin-top: 8px; }
+.method-grid p, .method-grid li { color: var(--ink-2); max-width: 75ch; margin-top: 8px; }
 .method-grid ul { padding-left: 18px; margin: 0; }
 @media (max-width: 900px) { .method-grid { grid-template-columns: 1fr; gap: 0; } }
 
@@ -243,7 +250,7 @@ table.data tbody tr:hover { background: var(--surface); }
 /* emphasis: the selected sector keeps the accent color, the others turn grey */
 .bar-muted { background: var(--axis); }
 .chart-empty { color: var(--ink-2); font-size: 0.9rem; max-width: 52ch; }
-#filters label.wide select { max-width: 360px; }
+#filters label.wide select { max-width: 420px; }
 .filters .note { margin-top: 10px; }
 .download a { font-weight: 600; }
 
