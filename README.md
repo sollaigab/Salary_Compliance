@@ -2,11 +2,11 @@
 
 Since 7 June 2026, Legislative Decree 96/2026 requires anyone who publishes a job ad in Italy to state the starting pay or a pay range. This project measures how well the rule is followed. It collects the ads published on the career sites of large companies hiring in Italy and counts how many give a figure, how many only use phrases like "pay commensurate with experience", and what salaries are offered by sector, function, seniority and region.
 
-The first collection ran on 4 October 2026: 216 companies analyzed, 56 with ads collected, about 2,400 ads in Italy. The results are published on a web page with data aggregated by sector, which does not allow anyone to trace them back to single companies.
+The first collection ran on 4 October 2026: 216 companies analyzed, 56 with ads collected, about 2,400 ads in Italy. The results are published on a [web page](https://sollaigab.github.io/Salary_Compliance/) with data aggregated by sector, which does not allow anyone to trace them back to single companies.
 
 ## What the page shows
 
-The page in `webapp/` shows the share of ads that state the pay, the median salary, and a comparison between ads published before and after the law came into force. The data can be filtered by period and sector, and downloaded as CSV (`webapp/data/aggregates.csv`).
+The page is online at https://sollaigab.github.io/Salary_Compliance/. Its source is in `webapp/`, and it shows the share of ads that state the pay, the median salary, and a comparison between ads published before and after the law came into force. The data can be filtered by period and sector, and downloaded as CSV (`webapp/data/aggregates.csv`).
 
 ![The page with the headline figure and the filters](docs/dashboard.png)
 
