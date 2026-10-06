@@ -1,54 +1,44 @@
 """
-Fase 3: esporta il database per analisi e web app.
+Phase 3: export the database for analysis and for the web app.
 
-Uso:
-    python export.py duckdb      # data/export/osservatorio.duckdb: copia completa per analisi SQL (PRIVATA)
-    python export.py public      # webapp/data/*.parquet: dati PUBBLICABILI, letti dalla web app
-    python export.py bigquery --project mio-progetto --dataset osservatorio   # facoltativo
+Usage:
+    python export.py duckdb      # data/export/observatory.duckdb: full copy for SQL analysis (PRIVATE)
+    python export.py public      # webapp/data/aggregates.*: PUBLISHABLE data, read by the web app
+    python export.py bigquery --project my-project --dataset observatory   # optional
 
-Cosa è pubblicabile (vedi README, "Pubblicazione dei risultati"):
-- sì: SOLO celle aggregate per periodo x macro-settore x una dimensione, con le regole di protezione
-  di lib/disclosure.py (almeno 5 annunci e 3 aziende, nessuna azienda oltre il 70%, soppressione secondaria)
-- no: annunci singoli, nomi, titoli e link delle aziende, descrizioni -> restano solo nel DB privato
+What can be published (see README, "Protecting the companies"):
+- yes: ONLY aggregate cells by period x macro-sector x one dimension, with the protection rules
+  in lib/disclosure.py (at least 5 ads and 3 companies, no company above 70%, secondary suppression)
+- no: single job ads, company names, titles and links, descriptions -> they stay in the private DB
 
-BigQuery: carica con "load job" e WRITE_TRUNCATE (ricarica completa), l'unico modo che funziona anche
-nella sandbox gratuita (niente DML/streaming). Attenzione: nella sandbox le tabelle scadono dopo 60 giorni.
+BigQuery: loads with a "load job" and WRITE_TRUNCATE (full reload), the only method that also works
+in the free sandbox (no DML or streaming). Note: sandbox tables expire after 60 days.
 """
 
 import argparse
 import csv
 import json
-import re
 import sys
-from pathlib import Path
 
 import duckdb
 
 from lib import db, disclosure, labels
 
 EXPORT_DIR = db.ROOT / "data" / "export"
-PUBLIC_DIR = db.ROOT / "webapp" / "data"   # dati pubblicabili: la web app li legge da qui
-DUCKDB_FILE = EXPORT_DIR / "osservatorio.duckdb"
+PUBLIC_DIR = db.ROOT / "webapp" / "data"   # publishable data: the web app reads it from here
+DUCKDB_FILE = EXPORT_DIR / "observatory.duckdb"
 TABLES = ["companies", "ats_registry", "locations", "jobs", "job_locations", "crawl_runs", "searches"]
-PUBLIC_COMPANY_COLUMNS = "company_id, name, website, sector, is_tech, company_type, hq_city, size_band"
 
 
 def duckdb_with_sqlite():
-    """Connessione DuckDB in memoria che legge direttamente data/jobs.db."""
+    """In-memory DuckDB connection that reads data/jobs.db directly."""
     con = duckdb.connect()
     con.execute("INSTALL sqlite; LOAD sqlite;")
     con.execute(f"ATTACH '{db.DB_PATH.as_posix()}' AS src (TYPE sqlite, READ_ONLY)")
-    # le viste SQLite (es. v_jobs_public) citano le tabelle senza prefisso: le copiamo in memoria
+    # the SQLite views (e.g. v_jobs_public) name the tables without a prefix: copy them into memory
     for t in ("jobs", "companies", "locations"):
         con.execute(f"CREATE TABLE {t} AS SELECT * FROM src.{t}")
     return con
-
-
-def load_aggregates() -> dict:
-    """Legge sql/aggregates.sql: ogni blocco '-- name: xxx' è una query."""
-    text = (db.SQL_DIR / "aggregates.sql").read_text(encoding="utf-8")
-    blocks = re.split(r"^-- name:\s*(\w+)\s*$", text, flags=re.MULTILINE)
-    return {blocks[i]: blocks[i + 1].strip().rstrip(";") for i in range(1, len(blocks), 2)}
 
 
 def export_duckdb():
@@ -61,25 +51,25 @@ def export_duckdb():
     for t in TABLES:
         con.execute(f"CREATE TABLE {t} AS SELECT * FROM src.{t}")
     con.execute("CREATE TABLE jobs_public AS SELECT * FROM src.v_jobs_public")
-    for name, sql in load_aggregates().items():
-        con.execute(f"CREATE VIEW {name} AS {sql}")
     con.close()
-    print(f"DuckDB scritto in {DUCKDB_FILE.relative_to(db.ROOT)} (privato: contiene le descrizioni)")
-    print("  prova:  duckdb data/export/osservatorio.duckdb \"SELECT * FROM transparency_by_sector\"")
+    print(f"DuckDB written to {DUCKDB_FILE.relative_to(db.ROOT)} (private: it contains the descriptions)")
+    print("  try:  duckdb data/export/observatory.duckdb \"SELECT sector, COUNT(*) FROM jobs_public GROUP BY 1\"")
 
 
-# Dimensioni pubblicate: ogni cella è periodo x macro-settore x UNA di queste dimensioni
+# Published dimensions: each cell is period x macro-sector x ONE of these dimensions
 PUBLIC_DIMS = ["region", "job_function", "seniority", "contract_type", "workplace_type"]
 
 
 def public_cells(con) -> list[dict]:
-    """Tutte le celle aggregate (prima delle regole di protezione), calcolate in DuckDB."""
+    """All aggregate cells (before the protection rules), computed in DuckDB."""
     macro_case = "CASE " + " ".join(f"WHEN c.sector = '{s}' THEN '{m}'" for s, m in labels.MACRO_OF_SECTOR.items()) \
-                 + " ELSE 'altro' END"
+                 + " ELSE 'other' END"
     con.execute(f"""CREATE OR REPLACE TABLE base AS
         SELECT j.company_id, {macro_case} AS macro_sector, j.posting_period,
-               COALESCE(l.region, CASE WHEN j.is_remote = 1 THEN 'Remoto' ELSE 'Sede non specificata' END) AS region,
-               j.job_function, j.seniority, j.contract_type, j.workplace_type,
+               COALESCE(l.region, CASE WHEN j.is_remote = 1 THEN 'Remote' ELSE 'Unspecified' END) AS region,
+               j.job_function,
+               CASE WHEN j.seniority_source = 'not_stated' THEN NULL ELSE j.seniority END AS seniority,
+               j.contract_type, j.workplace_type,
                j.salary_transparency, j.ral_min_annual, j.ral_max_annual
         FROM src.jobs j JOIN src.companies c ON c.company_id = j.company_id
         LEFT JOIN src.locations l ON l.location_id = j.location_id
@@ -87,18 +77,18 @@ def public_cells(con) -> list[dict]:
 
     def cells_for(period, macro, dim):
         where = ["TRUE"]
-        if period == "post_legge":
-            where.append("posting_period = 'post_legge'")
-        if macro != "tutti":
+        if period == "post_law":
+            where.append("posting_period = 'post_law'")
+        if macro != "all":
             where.append(f"macro_sector = '{macro}'")
-        value = "'tutti'" if dim == "totale" else f"COALESCE({dim}, 'non_indicato')"
+        value = "'all'" if dim == "total" else f"COALESCE({dim}, 'not_stated')"
         rows = con.execute(f"""
             WITH t AS (SELECT *, {value} AS value FROM base WHERE {' AND '.join(where)}),
                  per_company AS (SELECT value, company_id, COUNT(*) AS n,
                                         COUNT(ral_min_annual) AS n_ral FROM t GROUP BY ALL)
             SELECT t.value, COUNT(*) AS n_jobs, COUNT(DISTINCT t.company_id) AS n_companies,
-                   COUNT(*) FILTER (WHERE salary_transparency = 'cifra') AS n_with_salary,
-                   COUNT(*) FILTER (WHERE salary_transparency = 'vaga') AS n_vague,
+                   COUNT(*) FILTER (WHERE salary_transparency = 'figure') AS n_with_salary,
+                   COUNT(*) FILTER (WHERE salary_transparency = 'vague') AS n_vague,
                    COUNT(ral_min_annual) AS n_ral,
                    COUNT(DISTINCT t.company_id) FILTER (WHERE ral_min_annual IS NOT NULL) AS n_ral_companies,
                    MEDIAN(ral_min_annual) AS ral_min_median, MEDIAN(ral_max_annual) AS ral_max_median,
@@ -119,35 +109,35 @@ def public_cells(con) -> list[dict]:
         return out
 
     cells = []
-    for period in ("post_legge", "tutti"):
-        cells += cells_for(period, "tutti", "macro_sector")
-        for macro in ["tutti", *labels.MACRO_SECTOR]:
-            cells += cells_for(period, macro, "totale")
+    for period in ("post_law", "all"):
+        cells += cells_for(period, "all", "macro_sector")
+        for macro in ["all", *labels.MACRO_SECTOR]:
+            cells += cells_for(period, macro, "total")
             for dim in PUBLIC_DIMS:
                 cells += cells_for(period, macro, dim)
-        # confronto prima/dopo la legge: ha senso solo sul periodo "tutti"
-        if period == "tutti":
-            for macro in ["tutti", *labels.MACRO_SECTOR]:
+        # before/after the law: only meaningful on the "all" period
+        if period == "all":
+            for macro in ["all", *labels.MACRO_SECTOR]:
                 cells += cells_for(period, macro, "posting_period")
     return cells
 
 
 def export_public():
-    """Dati PUBBLICI: solo celle aggregate che rispettano le regole di lib/disclosure.py.
-    Nessun annuncio singolo, nessun nome, titolo o link di azienda."""
+    """PUBLIC data: only aggregate cells that pass the rules in lib/disclosure.py.
+    No single job ads, no company names, titles or links."""
     PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
-    for old in PUBLIC_DIR.glob("*.parquet"):      # versioni precedenti con dati per annuncio/azienda
+    for old in [*PUBLIC_DIR.glob("*.parquet"), *PUBLIC_DIR.glob("aggregati.*")]:   # earlier versions
         old.unlink()
     con = duckdb_with_sqlite()
     cells = public_cells(con)
     public = disclosure.apply_rules([dict(c) for c in cells])
-    (PUBLIC_DIR / "aggregati.json").write_text(json.dumps(public, ensure_ascii=False), encoding="utf-8")
-    with open(PUBLIC_DIR / "aggregati.csv", "w", encoding="utf-8", newline="") as f:
+    (PUBLIC_DIR / "aggregates.json").write_text(json.dumps(public, ensure_ascii=False), encoding="utf-8")
+    with open(PUBLIC_DIR / "aggregates.csv", "w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(public[0]))
         w.writeheader()
         w.writerows(public)
-    print(f"  webapp/data/aggregati.json e .csv: {len(public)} celle pubblicate su {len(cells)} "
-          f"({len(cells) - len(public)} nascoste dalle regole di protezione)")
+    print(f"  webapp/data/aggregates.json and .csv: {len(public)} cells published out of {len(cells)} "
+          f"({len(cells) - len(public)} hidden by the protection rules)")
     con.execute("CREATE TABLE jobs_public AS SELECT * FROM src.v_jobs_public")
     meta = con.execute("""
         SELECT MIN(first_seen), MAX(last_seen), COUNT(*) FILTER (WHERE is_active = 1),
@@ -162,50 +152,44 @@ def export_public():
         "rules": {"min_jobs": disclosure.MIN_JOBS, "min_companies": disclosure.MIN_COMPANIES,
                   "max_share": disclosure.MAX_SHARE},
     }, indent=1), encoding="utf-8")
-    print(f"  {meta_path.relative_to(db.ROOT)}: date e conteggi per la pagina metodologia")
+    print(f"  {meta_path.relative_to(db.ROOT)}: dates and counts for the methodology section")
     labels_path = PUBLIC_DIR / "labels.json"
-    public_labels = {k: v for k, v in labels.ALL.items() if k not in ("sector", "company_type")}
+    public_labels = {k: v for k, v in labels.ALL.items() if k != "sector"}
     public_labels["region"] = labels.REGION_EXTRA
     labels_path.write_text(json.dumps(public_labels, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"  {labels_path.relative_to(db.ROOT)}: etichette leggibili per i filtri")
-    print("File pubblicabili pronti: solo aggregati, nessuna azienda identificabile.")
+    print(f"  {labels_path.relative_to(db.ROOT)}: readable labels for the filters")
+    print("Publishable files ready: aggregates only, no identifiable company.")
 
 
 def export_bigquery(project: str, dataset: str):
-    import json
-    import tempfile
-
     from google.cloud import bigquery
 
     client = bigquery.Client(project=project)
     client.create_dataset(f"{project}.{dataset}", exists_ok=True)
     con = duckdb_with_sqlite()
-    con.execute("CREATE TABLE jobs_public AS SELECT * FROM src.v_jobs_public")
     sources = {t: f"SELECT * FROM src.{t}" for t in TABLES if t != "jobs"}
-    sources["jobs"] = "SELECT * EXCLUDE (description) FROM src.jobs"   # testo integrale: resta locale
+    sources["jobs"] = "SELECT * EXCLUDE (description) FROM src.jobs"   # full text stays local
+    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     for name, sql in sources.items():
-        rows = con.execute(sql).fetchall()
-        cols = [d[0] for d in con.description]
-        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
-            for r in rows:
-                f.write(json.dumps(dict(zip(cols, r)), ensure_ascii=False, default=str) + "\n")
-            tmp = Path(f.name)
+        tmp = EXPORT_DIR / f"bq_{name}.json"
+        con.execute(f"COPY ({sql}) TO '{tmp.as_posix()}' (FORMAT JSON)")   # one JSON line per record
+        rows = con.execute(f"SELECT COUNT(*) FROM ({sql})").fetchone()[0]
         job_config = bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
-            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,   # ricarica completa
+            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,   # full reload
             autodetect=True,
         )
         with open(tmp, "rb") as fh:
             client.load_table_from_file(fh, f"{project}.{dataset}.{name}", job_config=job_config).result()
         tmp.unlink()
-        print(f"  {dataset}.{name}: {len(rows)} righe")
+        print(f"  {dataset}.{name}: {rows} rows")
 
 
 def main():
-    p = argparse.ArgumentParser(description="Esporta il database")
+    p = argparse.ArgumentParser(description="Export the database")
     p.add_argument("target", choices=["duckdb", "public", "bigquery"])
-    p.add_argument("--project", help="progetto Google Cloud (solo bigquery)")
-    p.add_argument("--dataset", default="osservatorio_ral", help="dataset BigQuery")
+    p.add_argument("--project", help="Google Cloud project (bigquery only)")
+    p.add_argument("--dataset", default="salary_observatory", help="BigQuery dataset")
     args = p.parse_args()
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
@@ -215,7 +199,7 @@ def main():
         export_public()
     else:
         if not args.project:
-            p.error("--project è obbligatorio per bigquery")
+            p.error("--project is required for bigquery")
         export_bigquery(args.project, args.dataset)
 
 

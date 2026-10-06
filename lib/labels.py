@@ -1,127 +1,118 @@
 """
-Etichette leggibili per i valori codificati nel database (filtri e grafici della web app).
+Readable labels for the coded values stored in the database (web app filters and charts).
 
-Il DB resta con codici stabili (es. 'energia_utility'); l'app mostra le etichette.
-export.py le scrive in data/export/public/labels.json.
+The DB keeps stable codes (e.g. 'energy_utilities'); the app shows the labels.
+export.py writes them to webapp/data/labels.json.
 """
 
 SECTOR = {
-    "banche": "Banche",
-    "asset_management": "Gestione del risparmio",
-    "assicurazioni": "Assicurazioni",
-    "servizi_finanziari": "Servizi finanziari",
-    "fintech": "Fintech e insurtech",
+    "banks": "Banks",
+    "asset_management": "Asset management",
+    "insurance": "Insurance",
+    "financial_services": "Financial services",
+    "fintech": "Fintech and insurtech",
     "big4": "Big Four",
-    "consulenza": "Consulenza",
-    "consulenza_it": "Consulenza IT",
-    "marketing_media": "Agenzie marketing e media",
-    "media_editoria": "Media ed editoria",
-    "energia_utility": "Energia e utility",
-    "telco": "Telecomunicazioni",
-    "moda_lusso": "Moda e lusso",
-    "gdo_retail": "Grande distribuzione e retail",
-    "industria": "Industria",
+    "consulting": "Consulting",
+    "it_consulting": "IT consulting",
+    "marketing_media": "Marketing and media agencies",
+    "media_publishing": "Media and publishing",
+    "energy_utilities": "Energy and utilities",
+    "telco": "Telecommunications",
+    "fashion_luxury": "Fashion and luxury",
+    "retail": "Retail and grocery",
+    "industrial": "Industrial",
     "automotive": "Automotive",
-    "alimentare_bevande": "Alimentare e bevande",
-    "beni_consumo": "Beni di consumo",
-    "farmaceutico_salute": "Farmaceutica e salute",
-    "trasporti_logistica": "Trasporti e logistica",
-    "infrastrutture": "Infrastrutture",
+    "food_beverage": "Food and beverage",
+    "consumer_goods": "Consumer goods",
+    "pharma_health": "Pharma and healthcare",
+    "transport_logistics": "Transport and logistics",
+    "infrastructure": "Infrastructure",
     "big_tech": "Big tech",
     "software_saas": "Software",
-    "ecommerce_marketplace": "E-commerce e marketplace",
-    "formazione": "Formazione",
+    "ecommerce_marketplace": "E-commerce and marketplaces",
+    "education": "Education",
 }
 
 JOB_FUNCTION = {
-    "engineering": "Ingegneria e IT",
-    "data": "Dati e analytics",
-    "product": "Prodotto",
+    "engineering": "Engineering and IT",
+    "data": "Data and analytics",
+    "product": "Product",
     "design": "Design",
     "project_management": "Project management",
-    "sales": "Vendite",
-    "retail": "Negozi e punti vendita",
-    "marketing": "Marketing e comunicazione",
-    "finance": "Finanza e amministrazione",
-    "insurance": "Assicurativo (sinistri, attuariale)",
-    "hr": "Risorse umane",
-    "legal": "Legale, compliance e gare",
-    "strategy": "Strategia e pianificazione",
-    "admin": "Segreteria e back office",
-    "customer_service": "Assistenza clienti",
-    "operations": "Operations, produzione e tecnici",
-    "consulting": "Consulenza",
-    "healthcare": "Sanità",
-    "hospitality": "Ristorazione e ospitalità",
-    "other": "Altro",
+    "sales": "Sales",
+    "retail": "Stores",
+    "marketing": "Marketing and communication",
+    "finance": "Finance and accounting",
+    "insurance": "Insurance (claims, actuarial)",
+    "hr": "Human resources",
+    "legal": "Legal, compliance and tenders",
+    "strategy": "Strategy and planning",
+    "admin": "Office support and back office",
+    "customer_service": "Customer service",
+    "operations": "Operations, production and technicians",
+    "consulting": "Consulting",
+    "healthcare": "Healthcare",
+    "hospitality": "Food service and hospitality",
+    "other": "Other",
 }
 
 SENIORITY = {
-    "intern": "Stage e tirocinio",
+    "intern": "Internship",
     "junior": "Junior",
-    "mid": "Intermedio",
+    "mid": "Mid-level",
     "senior": "Senior",
-    "lead": "Lead / specialista esperto",
+    "lead": "Lead / expert specialist",
     "manager": "Manager",
-    "director": "Direttore",
-    "executive": "Dirigente apicale",
+    "director": "Director",
+    "executive": "Executive",
 }
 
 CONTRACT_TYPE = {
-    "indeterminato": "Tempo indeterminato",
-    "determinato": "Tempo determinato",
-    "stage": "Stage",
-    "apprendistato": "Apprendistato",
-    "freelance": "Libera professione",
-    "somministrazione": "Somministrazione",
+    "permanent": "Permanent",
+    "fixed_term": "Fixed term",
+    "internship": "Internship",
+    "apprenticeship": "Apprenticeship",
+    "freelance": "Freelance",
+    "agency": "Agency work",
 }
 
-WORK_SCHEDULE = {"full_time": "Tempo pieno", "part_time": "Part time"}
-WORKPLACE_TYPE = {"onsite": "In sede", "hybrid": "Ibrido", "remote": "Da remoto"}
+WORKPLACE_TYPE = {"onsite": "On site", "hybrid": "Hybrid", "remote": "Remote"}
 SALARY_TRANSPARENCY = {
-    "cifra": "Indica la retribuzione",
-    "vaga": "Solo formula vaga",
-    "assente": "Nessuna indicazione",
+    "figure": "States the pay",
+    "vague": "Vague wording only",
+    "none": "No information",
 }
 POSTING_PERIOD = {
-    "post_legge": "Dal 7 giugno 2026 (D.Lgs. 96/2026)",
-    "pre_legge": "Prima della legge (ultimi 12 mesi)",
-    "storico": "Online da oltre 12 mesi",
-}
-COMPANY_TYPE = {
-    "quotata_ftse_mib": "Quotata FTSE MIB",
-    "quotata_altro": "Quotata (altri indici)",
-    "multinazionale_estera": "Multinazionale estera",
-    "privata_italiana": "Privata italiana",
-    "scaleup_startup": "Scaleup e startup",
-    "pubblica": "A controllo pubblico",
+    "post_law": "From 7 June 2026",
+    "pre_law": "Before the law",
+    "old": "Online for over a year",
 }
 
-# Macro-settori per la versione pubblica: ognuno deve contenere almeno 3 aziende con annunci
-# (Media e comunicazione da sola ne aveva 2: è unita a tecnologia)
+# Macro-sectors for the public version: each must include at least 3 companies with job ads
+# (media and communication alone had 2, so it is merged with technology)
 MACRO_OF_SECTOR = {
-    "banche": "finanza", "asset_management": "finanza", "assicurazioni": "finanza",
-    "servizi_finanziari": "finanza", "fintech": "finanza",
-    "big4": "consulenza", "consulenza": "consulenza", "consulenza_it": "consulenza",
-    "software_saas": "tecnologia_media", "big_tech": "tecnologia_media",
-    "ecommerce_marketplace": "tecnologia_media", "formazione": "tecnologia_media",
-    "marketing_media": "tecnologia_media", "media_editoria": "tecnologia_media",
-    "energia_utility": "energia_infrastrutture", "telco": "energia_infrastrutture",
-    "infrastrutture": "energia_infrastrutture", "trasporti_logistica": "energia_infrastrutture",
-    "industria": "industria_salute", "automotive": "industria_salute",
-    "farmaceutico_salute": "industria_salute", "alimentare_bevande": "industria_salute",
-    "beni_consumo": "industria_salute",
-    "moda_lusso": "moda_retail", "gdo_retail": "moda_retail",
+    "banks": "finance", "asset_management": "finance", "insurance": "finance",
+    "financial_services": "finance", "fintech": "finance",
+    "big4": "consulting", "consulting": "consulting", "it_consulting": "consulting",
+    "software_saas": "tech_media", "big_tech": "tech_media",
+    "ecommerce_marketplace": "tech_media", "education": "tech_media",
+    "marketing_media": "tech_media", "media_publishing": "tech_media",
+    "energy_utilities": "energy_infrastructure", "telco": "energy_infrastructure",
+    "infrastructure": "energy_infrastructure", "transport_logistics": "energy_infrastructure",
+    "industrial": "industry_pharma", "automotive": "industry_pharma",
+    "pharma_health": "industry_pharma", "food_beverage": "industry_pharma",
+    "consumer_goods": "industry_pharma",
+    "fashion_luxury": "fashion_retail", "retail": "fashion_retail",
 }
 MACRO_SECTOR = {
-    "finanza": "Finanza e assicurazioni",
-    "consulenza": "Consulenza",
-    "tecnologia_media": "Tecnologia e media",
-    "energia_infrastrutture": "Energia, telco e infrastrutture",
-    "industria_salute": "Industria e farmaceutica",
-    "moda_retail": "Moda e distribuzione",
+    "finance": "Finance and insurance",
+    "consulting": "Consulting",
+    "tech_media": "Technology and media",
+    "energy_infrastructure": "Energy, telco and infrastructure",
+    "industry_pharma": "Industry and pharma",
+    "fashion_retail": "Fashion and retail",
 }
-REGION_EXTRA = {"Remoto": "Da remoto", "Sede non specificata": "Sede non specificata"}
+REGION_EXTRA = {"Remote": "Remote", "Unspecified": "Location not stated"}
 
 ALL = {
     "macro_sector": MACRO_SECTOR,
@@ -129,9 +120,7 @@ ALL = {
     "job_function": JOB_FUNCTION,
     "seniority": SENIORITY,
     "contract_type": CONTRACT_TYPE,
-    "work_schedule": WORK_SCHEDULE,
     "workplace_type": WORKPLACE_TYPE,
     "salary_transparency": SALARY_TRANSPARENCY,
     "posting_period": POSTING_PERIOD,
-    "company_type": COMPANY_TYPE,
 }

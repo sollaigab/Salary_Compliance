@@ -1,85 +1,91 @@
-# Contesto
+# Starting brief for Claude Code
 
-Sto costruendo un osservatorio sulle retribuzioni negli annunci di lavoro in Italia. Dal 7 giugno 2026 (D.Lgs. 96/2026) gli annunci devono indicare la retribuzione iniziale o la fascia retributiva. Voglio misurare quanti annunci la indicano davvero, quanti usano formule vaghe ("commisurata all'esperienza", "secondo CCNL") e quali sono le RAL offerte per ruolo e città.
+This is the brief I gave Claude Code at the start of the project, translated from Italian. Company names and slugs are replaced with placeholders. The project then changed along the way: the public output became sector aggregates only, and more ATSs were added.
 
-Il mio profilo: sono forte in SQL e BigQuery, meno in Python. Scrivi codice leggibile, commentato in italiano, senza astrazioni inutili.
+---
 
-## Cosa esiste già: `test_ats.py` che stai guardando ora, crea una nuova repo per il progetto
+# Context
 
-Script Python (solo `requests`) che interroga le API pubbliche dei job board degli ATS e normalizza gli annunci in un unico formato (`ats, company, title, location, url, description, salary_structured, salary_in_text, salary_vague`):
+I am building an observatory of pay in job ads in Italy. Since 7 June 2026 (Legislative Decree 96/2026) job ads must state the starting pay or the pay range. I want to measure how many ads actually state it, how many use vague wording ("commensurate with experience", "according to the national collective agreement") and what salaries are offered by role and city.
 
-- **Greenhouse**: `boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true`, con fallback sull'istanza EU (`boards-api.eu.greenhouse.io`). Non espone lo stipendio strutturato.
-- **Lever**: `api.lever.co/v0/postings/{slug}?mode=json`, con fallback EU (`api.eu.lever.co`). A volte ha `salaryRange`.
-- **Ashby**: `api.ashbyhq.com/posting-api/job-board/{slug}?includeCompensation=true`. Ha la retribuzione strutturata.
-- **Workday**: endpoint interno del sito carriere. `POST https://{tenant}.wdN.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs` (paginato, 20 per volta), poi `GET .../wday/cxs/{tenant}/{site}{externalPath}` per la descrizione completa. Se manca il nome del sito, lo ricava dal redirect della home del dominio.
-- Estrazione RAL con regex (`SALARY_RE`) e rilevamento delle formule vaghe (`VAGUE_SALARY_RE`).
+My profile: I am strong in SQL and BigQuery, less so in Python. Write readable code, commented in Italian, without needless abstractions.
 
-Stato: **testato e funzionante**, anche su tenant (Workday). Slug già verificati: Company A → Lever EU `prima`; examplepay → Greenhouse EU `examplepay`; tenant → Workday `https://tenant.wd3.myworkdayjobs.com/en-US/CompanyCareers`.
+## What already exists: `test_ats.py`, which you are looking at now. Create a new repo for the project
 
-Riusa queste funzioni di fetch invece di riscriverle: spostale in un modulo e importale.
+A Python script (`requests` only) that queries the public job board APIs of the ATSs and normalizes the ads into a single format (`ats, company, title, location, url, description, salary_structured, salary_in_text, salary_vague`):
 
-# Obiettivo
+- Greenhouse: `boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true`, with a fallback to the EU instance (`boards-api.eu.greenhouse.io`). It does not expose structured pay.
+- Lever: `api.lever.co/v0/postings/{slug}?mode=json`, with an EU fallback (`api.eu.lever.co`). Sometimes it has `salaryRange`.
+- Ashby: `api.ashbyhq.com/posting-api/job-board/{slug}?includeCompensation=true`. It has structured pay.
+- Workday: the career site's internal endpoint. `POST https://{tenant}.wdN.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs` (paginated, 20 at a time), then `GET .../wday/cxs/{tenant}/{site}{externalPath}` for the full description. If the site name is missing, it gets it from the redirect of the domain's home page.
+- Salary extraction with a regex (`SALARY_RE`) and detection of vague wording (`VAGUE_SALARY_RE`).
 
-Raccogliere tutte le offerte delle principali aziende che operano in Italia, sia tech sia non tech (banche, assicurazioni, consulenza e Big4, agenzie marketing e media, energia, telco, moda e lusso, GDO, industria, fintech e startup), e costruire un database interrogabile.
+Status: tested and working, including on a large consulting firm (Workday). Slugs already verified: Company A → Lever EU `company-a`; Company B → Greenhouse EU `company-b-srl`; Company C → Workday `https://company-c.wd103.myworkdayjobs.com/it-IT/CompanyCCareers`.
 
-Il problema da risolvere per primo è che oggi gli slug li trovo a mano. **La priorità assoluta è automatizzare la scoperta di quale ATS usa ogni azienda e del relativo slug o URL.** I dati che arrivano dagli ATS sono già buoni.
+Reuse these fetch functions instead of rewriting them: move them into a module and import them.
 
-# Fase 1 (la priorità): scoperta automatica di ATS e slug
+# Goal
 
-## 1a. Lista seed delle aziende
+Collect all the job ads of the main companies operating in Italy, both tech and non-tech (banks, insurance, consulting and Big Four, marketing and media agencies, energy, telco, fashion and luxury, retail, industry, fintech and startups), and build a database that can be queried.
 
-Crea `data/companies_seed.csv` con le colonne `name, website, sector, is_tech, source`. Popolala con un primo elenco ragionato di circa 150 aziende. Includi grandi aziende quotate (FTSE MIB e Mid Cap), le maggiori banche e assicurazioni, Big4 e società di consulenza, network pubblicitari e agenzie, le multinazionali con sedi importanti in Italia e le scaleup e startup italiane più note. Il file deve essere facile da estendere a mano. Marca come "da verificare" i siti web di cui non sei sicuro.
+The first problem to solve is that today I find the slugs by hand. The top priority is to automate finding which ATS each company uses and its slug or URL. The data coming from the ATSs is already good.
 
-## 1b. Rilevamento dell'ATS (`discover_ats.py`)
+# Phase 1 (the priority): automatic discovery of ATS and slug
 
-Per ogni azienda prova questi metodi nell'ordine e fermati al primo risultato valido:
+## 1a. Seed list of companies
 
-1. **Fingerprint sulla pagina carriere.** Scarica il sito, cerca la pagina carriere (link con testo o percorso tipo `careers`, `carriere`, `lavora-con-noi`, `jobs`, `work-with-us`) e analizza HTML, iframe, script e link alla ricerca delle impronte degli ATS:
+Create `data/companies_seed.csv` with the columns `name, website, sector, is_tech, source`. Fill it with a first reasoned list of about 150 companies. Include large listed companies (FTSE MIB and Mid Cap), the largest banks and insurers, the Big Four and consulting firms, advertising networks and agencies, multinationals with major offices in Italy, and the best-known Italian scaleups and startups. The file must be easy to extend by hand. Mark as "to verify" the websites you are not sure about.
+
+## 1b. ATS detection (`discover_ats.py`)
+
+For each company try these methods in order and stop at the first valid result:
+
+1. Fingerprint on the career page. Download the website, find the career page (a link with text or path such as `careers`, `carriere`, `lavora-con-noi`, `jobs`, `work-with-us`) and scan the HTML, iframes, scripts and links for ATS fingerprints:
    - `boards.greenhouse.io/{slug}`, `job-boards.greenhouse.io/{slug}`, `job-boards.eu.greenhouse.io/{slug}`, `greenhouse.io/embed/job_board?for={slug}`
    - `jobs.lever.co/{slug}`, `jobs.eu.lever.co/{slug}`
    - `jobs.ashbyhq.com/{slug}`
    - `{tenant}.wd{N}.myworkdayjobs.com/{locale?}/{site}`
-   - Riconosci anche gli ATS **non ancora supportati**, per misurare la copertura: SmartRecruiters, Workable, Recruitee, Teamtailor, Personio, SAP SuccessFactors, Oracle/Taleo, iCIMS, Avature, inRecruiting/Intervieweb (molto diffuso in Italia). Salvali con `supported = false`.
-2. **Probing degli slug.** Genera slug candidati dal nome (minuscolo, senza spazi, con trattini, con o senza `spa`, `srl`, `italia`, `group`). Prova gli endpoint pubblici di Greenhouse, Lever e Ashby, istanze USA ed EU. Per Workday prova `{tenant}.wd{1,3,5,103}.myworkdayjobs.com` e scopri il sito via redirect.
-3. **Validazione.** Un candidato è valido solo se l'endpoint risponde con almeno un annuncio **e** il nome dell'azienda corrisponde. Controlla il nome nelle descrizioni o negli URL, perché uno slug generico può appartenere a un'azienda omonima.
+   - Also recognize the ATSs that are not supported yet, to measure coverage: SmartRecruiters, Workable, Recruitee, Teamtailor, Personio, SAP SuccessFactors, Oracle/Taleo, iCIMS, Avature, inRecruiting/Intervieweb (very common in Italy). Save them with `supported = false`.
+2. Slug probing. Generate candidate slugs from the name (lowercase, no spaces, with hyphens, with or without `spa`, `srl`, `italia`, `group`). Try the public endpoints of Greenhouse, Lever and Ashby, US and EU instances. For Workday try `{tenant}.wd{1,3,5,103}.myworkdayjobs.com` and find the site through the redirect.
+3. Validation. A candidate is valid only if the endpoint answers with at least one job ad and the company name matches. Check the name in the descriptions or URLs, because a generic slug can belong to a company with the same name.
 
-Output in `ats_registry` con le colonne: `company, sector, is_tech, ats, slug_or_url, instance (us/eu), supported, detection_method (fingerprint/probe/manual), confidence (high/medium/low), n_jobs_total, n_jobs_italy, last_checked, notes`.
+Output in `ats_registry` with the columns: `company, sector, is_tech, ats, slug_or_url, instance (us/eu), supported, detection_method (fingerprint/probe/manual), confidence (high/medium/low), n_jobs_total, n_jobs_italy, last_checked, notes`.
 
-Regole:
-- Le righe a confidenza bassa vanno in revisione manuale, non nel crawler.
-- Lo script deve essere **idempotente**: si può rilanciare e aggiorna solo ciò che serve. Deve anche accettare una correzione manuale (`manual_overrides.csv`) che ha sempre la precedenza.
-- Alla fine stampa un report di copertura: quante aziende hanno un ATS rilevato, quanti supportati e non supportati, quante senza nessun ATS trovato. Il tutto anche diviso tra tech e non tech.
+Rules:
+- Low-confidence rows go to manual review, not to the crawler.
+- The script must be idempotent: it can be run again and only updates what is needed. It must also accept a manual correction (`manual_overrides.csv`) that always wins.
+- At the end print a coverage report: how many companies have a detected ATS, how many supported and unsupported, how many with no ATS found. Also split between tech and non-tech.
 
-# Fase 2: crawler degli annunci
+# Phase 2: job ad crawler
 
-`crawl_jobs.py` legge `ats_registry` (solo le righe `supported = true` con confidenza alta o media), scarica gli annunci e li salva normalizzati. Requisiti:
-- Tieni solo gli annunci in Italia, oppure remoti con possibilità di lavorare dall'Italia. Salva il campo `location` grezzo più `city` e `country` normalizzati.
-- Deduplica per `(ats, slug, job_id)` e tieni `first_seen` e `last_seen`, così nel tempo si vede quando un annuncio sparisce.
-- Salva la descrizione completa e i campi stipendio: strutturato, cifre estratte dal testo (min, max, valuta, periodo, lordo o netto se deducibile) e il flag `salary_vague`.
+`crawl_jobs.py` reads `ats_registry` (only rows with `supported = true` and high or medium confidence), downloads the ads and saves them normalized. Requirements:
+- Keep only ads in Italy, or remote with the option to work from Italy. Save the raw `location` field plus normalized `city` and `country`.
+- Deduplicate by `(ats, slug, job_id)` and keep `first_seen` and `last_seen`, so you can see over time when an ad disappears.
+- Save the full description and the pay fields: structured, figures extracted from the text (min, max, currency, period, gross or net if it can be inferred) and the `salary_vague` flag.
 
-# Fase 3: database e ricerche
+# Phase 3: database and searches
 
-Usa **SQLite** in locale (`data/jobs.db`), con uno schema compatibile con BigQuery e uno script `export_bigquery.py` per caricarlo dopo.
+Use SQLite locally (`data/jobs.db`), with a schema compatible with BigQuery and an `export_bigquery.py` script to load it later.
 
-Tabelle: `companies`, `ats_registry`, `jobs`, `searches`.
+Tables: `companies`, `ats_registry`, `jobs`, `searches`.
 
-Le ricerche sono il cuore dell'uso che ne farò. Crea un comando `search.py "data analyst" --location milano` che:
-- cerca il termine in titolo e descrizione degli annunci nel DB;
-- salva in `searches` i campi `search_term, location, run_at, n_jobs, n_companies, n_jobs_with_salary, n_jobs_vague, ral_min_median, ral_max_median`;
-- stampa le aziende che hanno annunci per quel termine e luogo, con il conteggio per azienda e quante indicano la retribuzione.
+Searches are the core of how I will use it. Create a `search.py "data analyst" --location milano` command that:
+- searches the term in the title and description of the ads in the DB;
+- saves in `searches` the fields `search_term, location, run_at, n_jobs, n_companies, n_jobs_with_salary, n_jobs_vague, ral_min_median, ral_max_median`;
+- prints the companies that have ads for that term and place, with the count per company and how many state the pay.
 
-Aggiungi una vista SQL `v_search_summary` per vedere lo storico delle ricerche.
+Add an SQL view `v_search_summary` to see the search history.
 
-# Vincoli
+# Constraints
 
-- Usa solo endpoint pubblici e pagine pubbliche: niente login, niente LinkedIn o Indeed, e rispetta `robots.txt` per le pagine dei siti aziendali.
-- Applica un rate limiting gentile (pause tra le richieste, max qualche richiesta al secondo per dominio), con retry e backoff sugli errori.
-- Metti in cache le risposte HTTP in sviluppo, per non ripetere centinaia di chiamate a ogni prova.
-- Tutto da riga di comando, con un `README.md` che spiega in poche righe come lanciare ogni fase.
-- Aggiungi test minimi sulle funzioni di parsing (URL Workday, generazione slug, regex RAL).
+- Use only public endpoints and public pages: no login, no LinkedIn or Indeed, and respect `robots.txt` for company website pages.
+- Apply gentle rate limiting (pauses between requests, at most a few requests per second per domain), with retries and backoff on errors.
+- Cache HTTP responses during development, so as not to repeat hundreds of calls on every test.
+- Everything from the command line, with a `README.md` that explains in a few lines how to run each phase.
+- Add minimal tests for the parsing functions (Workday URLs, slug generation, salary regex).
 
-# Come procedere
+# How to proceed
 
-1. Leggi `test_ats.py` e proponimi la struttura delle cartelle e lo schema delle tabelle **prima** di scrivere codice.
-2. Implementa la **Fase 1** e provala su 20 aziende miste (10 tech e 10 non tech). Mostrami `ats_registry` e il report di copertura, poi **fermati** perché io possa rivedere i risultati.
-3. Solo dopo il mio ok passa alle fasi 2 e 3.
+1. Read `test_ats.py` and propose the folder structure and the table schema before writing code.
+2. Implement Phase 1 and try it on 20 mixed companies (10 tech and 10 non-tech). Show me `ats_registry` and the coverage report, then stop so I can review the results.
+3. Only after my ok, move on to phases 2 and 3.

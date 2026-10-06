@@ -1,17 +1,17 @@
 """
-Fase 2: scarica gli annunci delle aziende pronte e li salva normalizzati nella tabella `jobs`.
+Phase 2: downloads the job ads of the ready companies and stores them, normalized, in the `jobs` table.
 
-Legge ats_registry (solo supported = 1 con confidenza high o medium), tiene gli annunci in Italia
-o da remoto (Italia/Europa), li arricchisce (sede ISTAT, seniority, funzione, contratto, retribuzione)
-e aggiorna lo storico: first_seen, last_seen, is_active.
+Reads ats_registry (only supported = 1 with high or medium confidence), keeps the ads located in Italy
+or remote (Italy/Europe), enriches them (ISTAT location, seniority, function, contract, pay)
+and updates the history: first_seen, last_seen, is_active.
 
-Uso:
-    python crawl_jobs.py --cache                      # tutte le board pronte
-    python crawl_jobs.py --only "companyb,examplecorp"   # solo alcune aziende
-    python crawl_jobs.py --max-jobs 200               # massimo annunci scaricati per board
+Usage:
+    python crawl_jobs.py --cache                          # every ready board
+    python crawl_jobs.py --only "Company A,Company B"     # only some companies
+    python crawl_jobs.py --max-jobs 200                   # max ads downloaded per board
 
-Le regole di accesso (robots.txt, riserva TDM, pause, stop su richiesta) sono in lib/http.py.
-Email e telefoni nelle descrizioni vengono rimossi prima del salvataggio (GDPR).
+The access rules (robots.txt, TDM reservation, pauses, stop on request) live in lib/http.py.
+Emails and phone numbers in the descriptions are removed before saving (GDPR).
 """
 
 import argparse
@@ -30,13 +30,13 @@ from lib.enrich import (contract_type, description_lang, job_function, posted_da
                         workplace_type)
 from lib.slugs import company_id_from_name
 
-DEFAULT_MAX_JOBS = 400   # per board: tetto di sicurezza sulle richieste di dettaglio
+DEFAULT_MAX_JOBS = 400   # per board: safety cap on detail requests
 
 
-# ---------------------------------------------------------------- dimensione geografica
+# ---------------------------------------------------------------- geography
 
 def ensure_locations(conn) -> loc.LocationIndex:
-    """Popola la tabella locations (una volta) e restituisce l'indice per riconoscere le sedi."""
+    """Fills the locations table (once) and returns the index used to recognize locations."""
     loc.download_reference(http)
     comuni = loc.load_comuni()
     n = conn.execute("SELECT COUNT(*) FROM locations").fetchone()[0]
@@ -44,14 +44,14 @@ def ensure_locations(conn) -> loc.LocationIndex:
         for row in comuni + loc.special_locations(comuni):
             db.upsert(conn, "locations", row, key="location_id")
         conn.commit()
-        print(f"Tabella locations: {len(comuni)} comuni ISTAT + regioni e righe speciali")
+        print(f"locations table: {len(comuni)} ISTAT municipalities + regions and special rows")
     return loc.LocationIndex(comuni)
 
 
 # ---------------------------------------------------------------- download
 
 def fetch_board(board: dict, max_jobs: int) -> list[dict]:
-    """Annunci della board. Per gli ATS 'pesanti' il filtro Italia si applica prima del dettaglio."""
+    """The board's ads. For the 'heavy' ATSs the Italy filter runs before fetching details."""
     ats, target = board["ats"], board["slug_or_url"]
     if ats == "workday":
         jobs, _ = fetch_workday(target, max_jobs=max_jobs, italy_only=True)
@@ -64,16 +64,38 @@ def fetch_board(board: dict, max_jobs: int) -> list[dict]:
     return jobs
 
 
-# ---------------------------------------------------------------- normalizzazione
+# ---------------------------------------------------------------- normalization
 
 def keep_location(norm: dict) -> bool:
-    """Teniamo gli annunci in Italia o da remoto (Italia/Europa)."""
+    """Keep ads located in Italy or remote (Italy/Europe)."""
     lid = norm["location_id"] or ""
     return lid.startswith("IT") or lid == "EU-REMOTE"
 
 
+def derived_fields(title: str, description: str, department, employment_type, structured,
+                   posted_at, first_seen: str) -> dict:
+    """Fields computed by the rules in lib/enrich.py: used by the crawl and by --reprocess."""
+    level, level_source, years = seniority_with_source(title, description)
+    contract = contract_type(employment_type, title, description)
+    salary = salary_fields(structured, f"{title} {description}",
+                           is_internship=(level == "intern" or contract == "internship"))
+    return {
+        "job_function": job_function(title, department),
+        "seniority": level,
+        "seniority_source": level_source,
+        "experience_years": years,
+        "contract_type": contract,
+        "work_schedule": work_schedule(employment_type, title, description),
+        "description_lang": description_lang(description),
+        "posted_date": posted_date(posted_at),
+        "posting_period": posting_period(posted_date(posted_at), first_seen),
+        **{k: v for k, v in salary.items() if k != "salary_text_matches"},
+        "salary_text_matches": json.dumps(salary["salary_text_matches"], ensure_ascii=False),
+    }
+
+
 def build_row(job: dict, board: dict, index: loc.LocationIndex, now: str, first_seen: str | None):
-    """Da annuncio dell'ATS a riga della tabella jobs (None se non è in Italia/remoto)."""
+    """From an ATS job ad to a jobs table row (None if not in Italy/remote)."""
     places = [job["location"]] + list(job["locations_all"] or [])
     normalized = [index.normalize(p, job["country"], job["workplace_type"]) for p in places if p]
     if not normalized and job["country"]:
@@ -85,10 +107,6 @@ def build_row(job: dict, board: dict, index: loc.LocationIndex, now: str, first_
 
     description = scrub_personal_data(job["description"] or "")
     title = job["title"] or ""
-    level, level_source, years = seniority_with_source(title, description)
-    contract = contract_type(job["employment_type"], title, description)
-    salary = salary_fields(job["salary_structured"], f"{title} {description}",
-                           is_internship=(level == "intern" or contract == "stage"))
     key = f"{board['ats']}|{board['slug_or_url']}|{job['job_id']}"
     row = {
         "job_key": key,
@@ -98,12 +116,8 @@ def build_row(job: dict, board: dict, index: loc.LocationIndex, now: str, first_
         "company_id": board["company_id"],
         "title": title,
         "department": job["department"],
-        "job_function": job_function(title, job["department"]),
-        "seniority": level,
-        "seniority_source": level_source,
-        "experience_years": years,
-        "contract_type": contract,
-        "work_schedule": work_schedule(job["employment_type"], title, description),
+        **derived_fields(title, description, job["department"], job["employment_type"],
+                         job["salary_structured"], job["posted_at"], first_seen or now),
         "workplace_type": workplace_type(job["workplace_type"], job["location"], description)
                           or ("remote" if main["is_remote"] else None),
         "location_raw": job["location"],
@@ -114,15 +128,10 @@ def build_row(job: dict, board: dict, index: loc.LocationIndex, now: str, first_
         "n_locations": len(places),
         "url": job["url"],
         "description": description,
-        "description_lang": description_lang(description),
         "description_length": len(description),
         "posted_at": job["posted_at"],
-        "posted_date": posted_date(job["posted_at"]),
-        "posting_period": posting_period(posted_date(job["posted_at"]), first_seen or now),
         "salary_structured_json": json.dumps(job["salary_structured"], ensure_ascii=False)
                                   if job["salary_structured"] else None,
-        **{k: v for k, v in salary.items() if k != "salary_text_matches"},
-        "salary_text_matches": json.dumps(salary["salary_text_matches"], ensure_ascii=False),
         "first_seen": first_seen or now,
         "last_seen": now,
         "is_active": 1,
@@ -133,10 +142,10 @@ def build_row(job: dict, board: dict, index: loc.LocationIndex, now: str, first_
     return row, place_rows
 
 
-# ---------------------------------------------------------------- salvataggio
+# ---------------------------------------------------------------- saving
 
 def save_board(conn, board: dict, rows: list[dict], places: list[dict]) -> int:
-    """Salva gli annunci della board e segna come non attivi quelli spariti. Restituisce i nuovi."""
+    """Saves the board's ads and marks the ones that disappeared as inactive. Returns the new count."""
     for r in rows:
         db.upsert(conn, "jobs", r, key="job_key")
         conn.execute("DELETE FROM job_locations WHERE job_key = ?", (r["job_key"],))
@@ -157,7 +166,7 @@ def crawl_board(conn, board: dict, index, max_jobs: int) -> dict:
                        "VALUES (?, ?, ?, ?, 'running')",
                        (board["company_id"], board["ats"], board["slug_or_url"], started))
     run_id = cur.lastrowid
-    conn.commit()   # niente scritture aperte durante il download (che può durare minuti)
+    conn.commit()   # no open writes during the download (it can take minutes)
     try:
         jobs = fetch_board(board, max_jobs)
     except (requests.RequestException, ValueError, http.RobotsDisallowed) as e:
@@ -182,51 +191,36 @@ def crawl_board(conn, board: dict, index, max_jobs: int) -> dict:
     conn.execute("UPDATE crawl_runs SET finished_at = ?, status = 'ok', n_jobs_seen = ?, n_jobs_new = ? "
                  "WHERE run_id = ?", (db.now_iso(), len(rows), new, run_id))
     conn.commit()
-    with_salary = sum(1 for r in rows if r["salary_transparency"] == "cifra")
-    vague = sum(1 for r in rows if r["salary_transparency"] == "vaga")
+    with_salary = sum(1 for r in rows if r["salary_transparency"] == "figure")
+    vague = sum(1 for r in rows if r["salary_transparency"] == "vague")
     return {"error": None, "downloaded": len(jobs), "kept": len(rows), "new": new,
             "with_salary": with_salary, "vague": vague}
 
 
 def reprocess(conn):
-    """Ricalcola i campi derivati (funzione, seniority, contratto, retribuzione...) dai dati già salvati,
-    senza scaricare nulla. Da usare quando si migliorano le regole di lib/enrich.py o lib/salary.py."""
+    """Recomputes the derived fields (function, seniority, contract, pay...) from the stored data,
+    without downloading anything. Use it after improving the rules in lib/enrich.py or lib/salary.py."""
     rows = conn.execute("SELECT job_key, title, department, description, salary_structured_json, "
                         "workplace_type, location_raw, is_remote, posted_at, first_seen FROM jobs").fetchall()
     for r in rows:
         title, description = r["title"] or "", r["description"] or ""
         structured = json.loads(r["salary_structured_json"]) if r["salary_structured_json"] else None
-        level, level_source, years = seniority_with_source(title, description)
-        contract = contract_type(None, title, description)
-        salary = salary_fields(structured, f"{title} {description}",
-                               is_internship=(level == "intern" or contract == "stage"))
-        update = {
-            "job_function": job_function(title, r["department"]),
-            "seniority": level,
-            "seniority_source": level_source,
-            "experience_years": years,
-            "contract_type": contract,
-            "work_schedule": work_schedule(None, title, description),
-            "description_lang": description_lang(description),
-            "posted_date": posted_date(r["posted_at"]),
-            "posting_period": posting_period(posted_date(r["posted_at"]), r["first_seen"]),
-            **{k: v for k, v in salary.items() if k != "salary_text_matches"},
-            "salary_text_matches": json.dumps(salary["salary_text_matches"], ensure_ascii=False),
-        }
+        update = derived_fields(title, description, r["department"], None, structured,
+                                r["posted_at"], r["first_seen"])
         sets = ", ".join(f"{k} = :{k}" for k in update)
         conn.execute(f"UPDATE jobs SET {sets} WHERE job_key = :job_key", {**update, "job_key": r["job_key"]})
     conn.commit()
-    print(f"Ricalcolati {len(rows)} annunci.")
+    print(f"Recomputed {len(rows)} job ads.")
 
 
 def main():
-    p = argparse.ArgumentParser(description="Crawler degli annunci (Fase 2)")
-    p.add_argument("--only", help="aziende separate da virgola (nomi come nel seed)")
+    p = argparse.ArgumentParser(description="Job ad crawler (Phase 2)")
+    p.add_argument("--only", help="comma-separated companies (names as in the seed list)")
     p.add_argument("--max-jobs", type=int, default=DEFAULT_MAX_JOBS,
-                   help=f"massimo annunci per board con dettaglio a pagamento di richieste (default {DEFAULT_MAX_JOBS})")
-    p.add_argument("--cache", action="store_true", help="cache HTTP su disco (sviluppo)")
+                   help=f"max ads per board when each detail costs a request (default {DEFAULT_MAX_JOBS})")
+    p.add_argument("--cache", action="store_true", help="on-disk HTTP cache (development)")
     p.add_argument("--reprocess", action="store_true",
-                   help="non scarica nulla: ricalcola i campi derivati sugli annunci già salvati")
+                   help="downloads nothing: recomputes the derived fields of the stored ads")
     args = p.parse_args()
 
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -245,7 +239,7 @@ def main():
     if args.only:
         wanted = {company_id_from_name(n) for n in args.only.split(",")}
         boards = [b for b in boards if b["company_id"] in wanted]
-    print(f"Board da scaricare: {len(boards)}")
+    print(f"Boards to download: {len(boards)}")
 
     started = time.time()
     totals = {"kept": 0, "new": 0, "with_salary": 0, "vague": 0, "errors": 0}
@@ -255,21 +249,21 @@ def main():
         eta = (time.time() - started) / i * (len(boards) - i) / 60
         if res["error"]:
             totals["errors"] += 1
-            print(f"[{i}/{len(boards)}] {board['company']:<32} {board['ats']:<14} ERRORE {res['error']}  "
-                  f"({time.time() - t0:.0f}s, fine stimata tra {eta:.0f} min)")
+            print(f"[{i}/{len(boards)}] {board['company']:<32} {board['ats']:<14} ERROR {res['error']}  "
+                  f"({time.time() - t0:.0f}s, about {eta:.0f} min left)")
             continue
         for k in ("kept", "new", "with_salary", "vague"):
             totals[k] += res[k]
         pct = lambda n: f"{100 * n / res['kept']:.0f}%" if res["kept"] else "-"
-        print(f"[{i}/{len(boards)}] {board['company']:<32} {board['ats']:<14} scaricati {res['downloaded']:>4}  "
-              f"in Italia {res['kept']:>4} (nuovi {res['new']:>4})  con cifra {pct(res['with_salary']):>4}  "
-              f"vaghe {pct(res['vague']):>4}  ({time.time() - t0:.0f}s, fine stimata tra {eta:.0f} min)")
+        print(f"[{i}/{len(boards)}] {board['company']:<32} {board['ats']:<14} downloaded {res['downloaded']:>4}  "
+              f"in Italy {res['kept']:>4} (new {res['new']:>4})  with figure {pct(res['with_salary']):>4}  "
+              f"vague {pct(res['vague']):>4}  ({time.time() - t0:.0f}s, about {eta:.0f} min left)")
 
     k = totals["kept"]
-    print(f"\nTotale annunci salvati: {k}  (nuovi {totals['new']}, board con errore {totals['errors']})")
+    print(f"\nTotal ads saved: {k}  (new {totals['new']}, boards with errors {totals['errors']})")
     if k:
-        print(f"Con retribuzione in cifra: {totals['with_salary']} ({100 * totals['with_salary'] / k:.1f}%)  "
-              f"| solo formula vaga: {totals['vague']} ({100 * totals['vague'] / k:.1f}%)")
+        print(f"With a pay figure: {totals['with_salary']} ({100 * totals['with_salary'] / k:.1f}%)  "
+              f"| vague wording only: {totals['vague']} ({100 * totals['vague'] / k:.1f}%)")
 
 
 if __name__ == "__main__":

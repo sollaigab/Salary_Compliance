@@ -1,142 +1,143 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Osservatorio trasparenza retributiva</title>
-  <meta name="description" content="Quanti annunci di lavoro in Italia indicano la retribuzione dopo il D.Lgs. 96/2026, e quali RAL offrono, per settore, funzione e regione. Dati aggregati.">
+  <title>Salary Transparency Observatory</title>
+  <meta name="description" content="How many job ads in Italy state the pay after Legislative Decree 96/2026, and which salaries they offer by sector, function and region. Aggregate data.">
   <link rel="stylesheet" href="style.css">
   <script type="module" src="app.js"></script>
 </head>
 <body>
   <header class="topbar">
     <div class="wrap topbar-inner">
-      <a class="brand" href="#">Osservatorio trasparenza retributiva</a>
-      <nav aria-label="Sezioni">
-        <a href="#risultati">Risultati</a>
-        <a href="#dati">Scarica i dati</a>
-        <a href="#metodo">Metodologia</a>
+      <a class="brand" href="#">Salary Transparency Observatory</a>
+      <nav aria-label="Sections">
+        <a href="#results-section">Results</a>
+        <a href="#data">Download the data</a>
+        <a href="#method">Methodology</a>
       </nav>
-      <button class="theme-toggle" type="button" id="theme-toggle" aria-label="Cambia tema chiaro o scuro">Tema</button>
+      <button class="theme-toggle" type="button" id="theme-toggle" aria-label="Switch between light and dark theme">Theme</button>
     </div>
   </header>
 
   <main>
-    <section class="wrap intro" id="risultati">
-      <h1>Quanti annunci di lavoro dicono quanto pagano</h1>
-      <p class="lede">Dal 7 giugno 2026 gli annunci devono indicare la retribuzione o la fascia. Qui misuriamo quanti lo fanno davvero e quanto offrono.</p>
-      <p class="stamp" id="stamp">Caricamento dei dati…</p>
+    <section class="wrap intro" id="results-section">
+      <h1>How many job ads say what they pay</h1>
+      <p class="lede">Since 7 June 2026, job ads in Italy must state the starting pay or a pay range. This page measures how many actually do, and how much they offer.</p>
+      <p class="stamp" id="stamp">Loading the data…</p>
     </section>
 
-    <section class="wrap filters" aria-label="Filtri">
+    <section class="wrap filters" aria-label="Filters">
       <form id="filters">
-        <label>Periodo
+        <label>Period
           <select name="period">
-            <option value="post_legge">Pubblicati dal 7 giugno 2026</option>
-            <option value="tutti">Tutti gli annunci online</option>
+            <option value="post_law">Published from 7 June 2026</option>
+            <option value="all">All ads online</option>
           </select>
         </label>
-        <label class="wide">Settore
-          <select name="macro"><option value="tutti">Tutti i settori</option></select>
+        <label class="wide">Sector
+          <select name="macro"><option value="all">All sectors</option></select>
         </label>
-        <button type="reset" class="ghost">Azzera filtri</button>
+        <button type="reset" class="ghost">Reset filters</button>
       </form>
-      <p class="note">I dati sono aggregati per settore e non mostrano le singole aziende. Le combinazioni con pochi annunci o poche aziende sono nascoste.</p>
+      <p class="note">The data is aggregated by sector and does not show single companies. Combinations with few ads or few companies are hidden.</p>
     </section>
 
     <div id="results" class="results is-loading" aria-live="polite">
       <section class="wrap headline">
         <div class="hero-figure">
           <p class="hero-value" id="kpi-pct">-</p>
-          <p class="hero-label">degli annunci indica la retribuzione</p>
+          <p class="hero-label">of job ads state the pay</p>
         </div>
         <dl class="kpis">
-          <div><dt>RAL mediana</dt><dd id="kpi-ral">-</dd></div>
-          <div><dt>Annunci</dt><dd id="kpi-jobs">-</dd></div>
-          <div><dt>Aziende</dt><dd id="kpi-companies">-</dd></div>
-          <div><dt>Solo formula vaga</dt><dd id="kpi-vague">-</dd></div>
+          <div><dt>Median salary</dt><dd id="kpi-ral">-</dd></div>
+          <div><dt>Job ads</dt><dd id="kpi-jobs">-</dd></div>
+          <div><dt>Companies</dt><dd id="kpi-companies">-</dd></div>
+          <div><dt>Vague wording only</dt><dd id="kpi-vague">-</dd></div>
         </dl>
       </section>
 
       <section class="wrap charts">
         <figure class="chart" id="chart-macro">
-          <figcaption><h2>Annunci con retribuzione, per settore</h2><p>Quota sul totale degli annunci del settore. Il settore selezionato è evidenziato.</p></figcaption>
+          <figcaption><h2>Ads that state the pay, by sector</h2><p>Share of all the sector's ads. The selected sector is highlighted.</p></figcaption>
           <div class="chart-body"></div>
-          <details class="table-view"><summary>Vedi come tabella</summary><div></div></details>
+          <details class="table-view"><summary>View as table</summary><div></div></details>
         </figure>
 
         <figure class="chart" id="chart-region">
-          <figcaption><h2>Annunci con retribuzione, per regione</h2><p>Quota sul totale degli annunci della regione.</p></figcaption>
+          <figcaption><h2>Ads that state the pay, by region</h2><p>Share of all the region's ads.</p></figcaption>
           <div class="chart-body"></div>
-          <details class="table-view"><summary>Vedi come tabella</summary><div></div></details>
+          <details class="table-view"><summary>View as table</summary><div></div></details>
         </figure>
 
         <figure class="chart" id="chart-function">
-          <figcaption><h2>RAL offerta, per funzione</h2><p>Mediana del minimo e del massimo della fascia, in euro lordi annui.</p></figcaption>
-          <ul class="legend" aria-label="Legenda">
-            <li><span class="key key-lo"></span>Minimo della fascia</li>
-            <li><span class="key key-hi"></span>Massimo della fascia</li>
+          <figcaption><h2>Salary offered, by function</h2><p>Median of the bottom and the top of the range, in gross euros per year.</p></figcaption>
+          <ul class="legend" aria-label="Legend">
+            <li><span class="key key-lo"></span>Bottom of the range</li>
+            <li><span class="key key-hi"></span>Top of the range</li>
           </ul>
           <div class="chart-body"></div>
-          <details class="table-view"><summary>Vedi come tabella</summary><div></div></details>
+          <details class="table-view"><summary>View as table</summary><div></div></details>
         </figure>
 
         <figure class="chart" id="chart-seniority">
-          <figcaption><h2>RAL offerta, per seniority</h2><p>Mediana del minimo e del massimo della fascia, in euro lordi annui.</p></figcaption>
-          <ul class="legend" aria-label="Legenda">
-            <li><span class="key key-lo"></span>Minimo della fascia</li>
-            <li><span class="key key-hi"></span>Massimo della fascia</li>
+          <figcaption><h2>Salary offered, by seniority</h2><p>Median of the bottom and the top of the range, in gross euros per year. Only ads that state the level or the years of experience required.</p></figcaption>
+          <ul class="legend" aria-label="Legend">
+            <li><span class="key key-lo"></span>Bottom of the range</li>
+            <li><span class="key key-hi"></span>Top of the range</li>
           </ul>
           <div class="chart-body"></div>
-          <details class="table-view"><summary>Vedi come tabella</summary><div></div></details>
+          <details class="table-view"><summary>View as table</summary><div></div></details>
         </figure>
 
         <figure class="chart" id="chart-contract">
-          <figcaption><h2>Annunci con retribuzione, per contratto</h2><p>Quota sul totale degli annunci con quel tipo di contratto.</p></figcaption>
+          <figcaption><h2>Ads that state the pay, by contract</h2><p>Share of all ads with that contract type.</p></figcaption>
           <div class="chart-body"></div>
-          <details class="table-view"><summary>Vedi come tabella</summary><div></div></details>
+          <details class="table-view"><summary>View as table</summary><div></div></details>
         </figure>
 
         <figure class="chart" id="chart-period">
-          <figcaption><h2>Prima e dopo la legge</h2><p>Per data di pubblicazione, su tutti gli annunci online. Gli annunci più vecchi ancora visibili non rappresentano il mercato di allora (vedi la metodologia).</p></figcaption>
+          <figcaption><h2>Before and after the law</h2><p>By publication date, across all ads online. "Before the law" covers the 12 months before 7 June 2026. Older ads still online do not represent the market of that time (see the methodology).</p></figcaption>
           <div class="chart-body"></div>
-          <details class="table-view"><summary>Vedi come tabella</summary><div></div></details>
+          <details class="table-view"><summary>View as table</summary><div></div></details>
         </figure>
       </section>
     </div>
 
     <p class="wrap error" id="error" hidden></p>
 
-    <section class="wrap block" id="dati">
-      <h2>Scarica i dati</h2>
-      <p class="note">Sono gli stessi dati aggregati dei grafici, con conteggi, quote e mediane: una riga per ogni combinazione di periodo, settore e dimensione.</p>
-      <p class="download"><a href="data/aggregati.csv" download>aggregati.csv</a></p>
+    <section class="wrap block" id="data">
+      <h2>Download the data</h2>
+      <p class="note">The same aggregate data as the charts, with counts, shares and medians: one row for each combination of period, sector and dimension.</p>
+      <p class="download"><a href="data/aggregates.csv" download>aggregates.csv</a></p>
+      <p class="note">Data license: <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. You can reuse it with attribution.</p>
     </section>
 
-    <section class="wrap block method" id="metodo">
-      <h2>Metodologia e limiti</h2>
+    <section class="wrap block method" id="method">
+      <h2>Methodology and limits</h2>
       <div class="method-grid">
         <div>
-          <h3>Fonti</h3>
-          <p>Gli annunci vengono dai siti carriere delle aziende, letti attraverso le API e i feed pubblici dei sistemi di selezione (Greenhouse, Lever, Ashby, Workday, Workable, Recruitee, Teamtailor, Oracle Recruiting, SuccessFactors). Non usiamo login né portali di annunci di terzi.</p>
-          <h3>Regole di raccolta</h3>
-          <p>Rispettiamo robots.txt e le riserve sul text and data mining (art. 70-quater L. 633/1941). Le richieste sono distanziate e si fermano se un servizio chiede una pausa. Non ripubblichiamo il testo degli annunci e non salviamo i dati personali dei selezionatori.</p>
-          <h3>Protezione delle aziende</h3>
-          <p>Pubblichiamo solo dati aggregati per settore. Una combinazione compare se riunisce almeno <span data-meta="rules.min_jobs"></span> annunci di almeno <span data-meta="rules.min_companies"></span> aziende diverse e se nessuna azienda supera il <span data-meta="rules.max_share_pct"></span> degli annunci. Quando una sola combinazione di un gruppo è nascosta, nascondiamo anche la più piccola delle altre, perché non si possa ricavare per differenza.</p>
+          <h3>Sources</h3>
+          <p>The ads come from company career sites, read through the public APIs and feeds of their applicant tracking systems (Greenhouse, Lever, Ashby, Workday, Workable, Recruitee, Teamtailor, Oracle Recruiting, SuccessFactors). No logins and no third-party job boards are used.</p>
+          <h3>Collection rules</h3>
+          <p>The collection respects robots.txt and text and data mining opt-outs (art. 70-quater of Italian Law 633/1941). Requests are spaced out and stop when a service asks for a pause. The ad text is not republished, and recruiters' personal data is not stored.</p>
+          <h3>Protecting the companies</h3>
+          <p>Only data aggregated by sector is published. A combination appears if it covers at least <span data-meta="rules.min_jobs"></span> ads from at least <span data-meta="rules.min_companies"></span> different companies and no company has more than <span data-meta="rules.max_share_pct"></span> of the ads. When only one combination in a group is hidden, the smallest of the others is hidden too, so it cannot be worked out by subtraction.</p>
         </div>
         <div>
-          <h3>Cosa misuriamo</h3>
-          <p>Un annuncio "indica la retribuzione" se riporta una cifra o una fascia, nel testo o nel campo dedicato del sistema di selezione. Le cifre mensili sono portate a RAL su 14 mensilità (12 per gli stage). L'analisi principale riguarda gli annunci pubblicati dal 7 giugno 2026.</p>
-          <h3>Limiti</h3>
+          <h3>What is measured</h3>
+          <p>An ad "states the pay" if it gives a figure or a range, in the text or in the dedicated field of the applicant tracking system. Monthly figures are converted to gross annual salary over 14 monthly payments, the Italian norm (12 for internships). The main analysis covers ads published from 7 June 2026.</p>
+          <h3>Limits</h3>
           <ul>
-            <li>Osserviamo solo gli annunci online dal <span data-meta="observed_from"></span>: quelli più vecchi ancora visibili non sono un campione del mercato prima della legge.</li>
-            <li>Le aziende coperte sono <span data-meta="n_companies_active"></span> su <span data-meta="n_companies_seed"></span> analizzate: chi usa sistemi senza fonte pubblica è escluso, quindi i risultati descrivono queste aziende, non tutto il mercato.</li>
-            <li>La cifra e la seniority si ricavano dal testo con regole automatiche, che stiamo verificando a mano su un campione di annunci.</li>
-            <li>La data di pubblicazione ha significati leggermente diversi tra i sistemi di selezione.</li>
+            <li>Only ads online since <span data-meta="observed_from"></span> are observed: older ads still online are not a sample of the market before the law.</li>
+            <li>The data covers <span data-meta="n_companies_active"></span> of the <span data-meta="n_companies_seed"></span> companies analyzed. Companies whose systems have no public source are left out, so the results describe these companies, not the whole market.</li>
+            <li>Pay and seniority are extracted from the text with automatic rules, which are being checked by hand on a sample of ads.</li>
+            <li>The publication date means slightly different things across applicant tracking systems.</li>
           </ul>
         </div>
       </div>
-      <p class="note">Ultimo aggiornamento dei dati: <span data-meta="last_update"></span>.</p>
+      <p class="note">Last data update: <span data-meta="last_update"></span>.</p>
     </section>
   </main>
 

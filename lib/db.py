@@ -1,5 +1,5 @@
 """
-Connessione al database SQLite locale (data/jobs.db) e creazione dello schema.
+Connection to the local SQLite database (data/jobs.db) and schema creation.
 """
 
 import sqlite3
@@ -12,18 +12,18 @@ SQL_DIR = ROOT / "sql"
 
 
 def connect(path: Path = DB_PATH) -> sqlite3.Connection:
-    """Apre il DB (lo crea se manca) e si assicura che tabelle e viste esistano."""
+    """Opens the DB (creating it if missing) and makes sure tables and views exist."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, timeout=60)   # se un altro script sta scrivendo, aspetta fino a 60 s
-    conn.row_factory = sqlite3.Row          # righe leggibili per nome di colonna
-    conn.execute("PRAGMA journal_mode=WAL")  # si può leggere (search.py) mentre il crawler scrive
+    conn = sqlite3.connect(path, timeout=60)   # if another script is writing, wait up to 60 s
+    conn.row_factory = sqlite3.Row          # rows readable by column name
+    conn.execute("PRAGMA journal_mode=WAL")  # search.py can read while the crawler writes
     conn.executescript((SQL_DIR / "schema.sql").read_text(encoding="utf-8"))
     add_missing_columns(conn)
     conn.executescript((SQL_DIR / "views.sql").read_text(encoding="utf-8"))
     return conn
 
 
-# Colonne aggiunte dopo la prima versione dello schema: su un DB già esistente vanno aggiunte a mano
+# Columns added after the first schema version: an existing DB needs them added explicitly
 LATER_COLUMNS = {
     "locations": {"region_code": "TEXT"},
     "jobs": {"posted_date": "TEXT", "posting_period": "TEXT", "seniority_source": "TEXT",
@@ -40,12 +40,12 @@ def add_missing_columns(conn: sqlite3.Connection):
 
 
 def now_iso() -> str:
-    """Timestamp UTC in formato ISO-8601, compatibile con TIMESTAMP di BigQuery."""
+    """UTC timestamp in ISO-8601 format, compatible with BigQuery TIMESTAMP."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def upsert(conn: sqlite3.Connection, table: str, row: dict, key: str):
-    """INSERT, oppure UPDATE di tutte le colonne se la chiave esiste già."""
+    """INSERT, or UPDATE every column if the key already exists."""
     cols = list(row)
     placeholders = ", ".join(f":{c}" for c in cols)
     updates = ", ".join(f"{c} = excluded.{c}" for c in cols if c != key)

@@ -1,14 +1,16 @@
 """
-Sedi degli annunci: riconoscimento dell'Italia e normalizzazione verso la tabella `locations`.
+Job ad locations: recognizing Italy and normalizing to the `locations` table.
 
-Fonti (dati aperti, scaricati una volta e salvati in data/reference/):
-- ISTAT, "Elenco comuni italiani" (CC BY 4.0): comune, provincia, regione, macro-area, capoluogo
-- comuni-json di Matteo Contrini (MIT, dati ISTAT): popolazione, per la classe di dimensione
+Sources (open data, downloaded once and saved in data/reference/):
+- ISTAT, "Elenco comuni italiani" (CC BY 4.0): municipality, province, region, macro-area, provincial capital
+- comuni-json by Matteo Contrini (MIT, ISTAT data): population, for the size band
 
 location_id:
-- 'IT-<codice ISTAT>' per un comune        es. IT-015146 (Milano)
-- 'IT-REG-<codice regione>' solo regione    es. IT-REG-03 (Lombardia)
-- 'IT' Italia senza città, 'IT-REMOTE' da remoto in Italia, 'EU-REMOTE' da remoto in Europa/ovunque
+- 'IT-<ISTAT code>' for a municipality     e.g. IT-015146 (Milano)
+- 'IT-REG-<region code>' region only        e.g. IT-REG-03 (Lombardia)
+- 'IT' Italy without a city, 'IT-REMOTE' remote in Italy, 'EU-REMOTE' remote in Europe/anywhere
+
+Italian place names stay in Italian, as in the ISTAT list.
 """
 
 import csv
@@ -26,9 +28,9 @@ POP_URL = "https://raw.githubusercontent.com/matteocontrini/comuni-json/master/c
 ISTAT_FILE = REF_DIR / "comuni_istat.csv"
 POP_FILE = REF_DIR / "comuni_popolazione.json"
 
-# ---------------------------------------------------------------- riconoscimento veloce (Fase 1)
+# ---------------------------------------------------------------- quick check (Phase 1)
 
-# Paese + principali città/comuni sede di uffici + regioni
+# Country + main cities/municipalities with offices + regions
 ITALY_RE = re.compile(
     r"\b(?:italy|italia|italien|italie"
     r"|milan|milano|rome|roma|turin|torino|napoli|naples|bologna|firenze|florence"
@@ -43,7 +45,7 @@ ITALY_RE = re.compile(
     r"|frosinone|caserta|avellino|benevento|foggia|taranto|brindisi|matera|potenza|cosenza"
     r"|reggio calabria|catanzaro|messina|siracusa|ragusa|trapani|agrigento|sassari|olbia|terni"
     r"|l.aquila|teramo|chieti|campobasso|aosta"
-    # regioni
+    # regions
     r"|lombardia|lombardy|piemonte|piedmont|veneto|emilia romagna|emilia|toscana|tuscany|lazio"
     r"|campania|puglia|apulia|sicilia|sicily|sardegna|sardinia|liguria|marche|abruzzo|umbria"
     r"|friuli venezia giulia|friuli|trentino|alto adige|calabria|basilicata|molise|valle d.aosta)\b",
@@ -54,15 +56,15 @@ ITALY_COUNTRY_CODES = {"it", "ita", "italy", "italia"}
 
 
 def is_italy(location, country=None) -> bool:
-    """True se la sede (testo libero) o il codice paese indicano l'Italia."""
+    """True if the location (free text) or the country code point to Italy."""
     if country and str(country).strip().lower() in ITALY_COUNTRY_CODES:
         return True
     return bool(location and ITALY_RE.search(strip_accents(str(location))))
 
 
-# ---------------------------------------------------------------- dimensione geografica (Fase 2)
+# ---------------------------------------------------------------- geography (Phase 2)
 
-# Nomi stranieri delle città italiane (come li scrivono gli ATS internazionali)
+# Foreign names of Italian cities (as international ATSs write them)
 EXONYMS = {
     "milan": "milano", "rome": "roma", "turin": "torino", "naples": "napoli",
     "florence": "firenze", "genoa": "genova", "venice": "venezia", "padua": "padova",
@@ -87,16 +89,16 @@ def size_band(population) -> str | None:
     if not population:
         return None
     if population >= 1_000_000:
-        return "metropoli"
+        return "metro"
     if population >= 250_000:
-        return "grande"
+        return "large"
     if population >= 50_000:
-        return "media"
-    return "piccola"
+        return "medium"
+    return "small"
 
 
 def download_reference(http):
-    """Scarica (una volta) i file ISTAT e popolazione in data/reference/."""
+    """Downloads (once) the ISTAT and population files into data/reference/."""
     REF_DIR.mkdir(parents=True, exist_ok=True)
     if not ISTAT_FILE.exists():
         r = http.request("GET", ISTAT_URL, check_robots=True)
@@ -109,7 +111,7 @@ def download_reference(http):
 
 
 def load_comuni() -> list[dict]:
-    """Comuni ISTAT con popolazione. Una riga = un dizionario pronto per la tabella `locations`."""
+    """ISTAT municipalities with population. One row = one dict ready for the `locations` table."""
     population = {c["codice"]: c.get("popolazione") for c in json.loads(POP_FILE.read_text(encoding="utf-8"))}
     rows = list(csv.reader(io.StringIO(ISTAT_FILE.read_text(encoding="utf-8")), delimiter=";"))
     comuni = []
@@ -127,7 +129,7 @@ def load_comuni() -> list[dict]:
             "region": r[10].strip(),
             "region_code": r[0].strip(),
             "macro_area": r[9].strip(),
-            "country": "Italia",
+            "country": "Italy",
             "country_code": "IT",
             "population": pop,
             "city_size_band": size_band(pop),
@@ -140,32 +142,32 @@ def load_comuni() -> list[dict]:
 
 
 def special_locations(comuni: list[dict]) -> list[dict]:
-    """Righe 'Italia', 'Italia da remoto', 'Europa da remoto' e una riga per regione."""
+    """Rows for 'Italy', 'remote in Italy', 'remote in Europe' and one row per region."""
     base = dict.fromkeys(["city", "istat_code", "province", "province_code", "region", "region_code",
                           "macro_area", "population", "city_size_band", "lat", "lon"])
     rows = [
-        {**base, "location_id": "IT", "country": "Italia", "country_code": "IT", "is_capoluogo": 0, "is_remote": 0},
-        {**base, "location_id": "IT-REMOTE", "country": "Italia", "country_code": "IT", "is_capoluogo": 0, "is_remote": 1},
-        {**base, "location_id": "EU-REMOTE", "country": "Europa", "country_code": None, "is_capoluogo": 0, "is_remote": 1},
+        {**base, "location_id": "IT", "country": "Italy", "country_code": "IT", "is_capoluogo": 0, "is_remote": 0},
+        {**base, "location_id": "IT-REMOTE", "country": "Italy", "country_code": "IT", "is_capoluogo": 0, "is_remote": 1},
+        {**base, "location_id": "EU-REMOTE", "country": "Europe", "country_code": None, "is_capoluogo": 0, "is_remote": 1},
     ]
     regions = {}
     for c in comuni:
         regions.setdefault(c["region_code"], c)
     for code, c in regions.items():
         rows.append({**base, "location_id": f"IT-REG-{code}", "region": c["region"], "region_code": code,
-                     "macro_area": c["macro_area"], "country": "Italia", "country_code": "IT",
+                     "macro_area": c["macro_area"], "country": "Italy", "country_code": "IT",
                      "is_capoluogo": 0, "is_remote": 0})
     return rows
 
 
 class LocationIndex:
-    """Trova il comune (o la regione) dentro una sede scritta in testo libero."""
+    """Finds the municipality (or region) inside a free-text location."""
 
     def __init__(self, comuni: list[dict]):
         self.by_name = {}
         for c in comuni:
             key = normalize_text(c["city"])
-            # nomi uguali in regioni diverse: tieni il più popoloso (es. "San Giorgio")
+            # same name in different regions: keep the most populous (e.g. "San Giorgio")
             old = self.by_name.get(key)
             if not old or (c["population"] or 0) > (old["population"] or 0):
                 self.by_name[key] = c
@@ -177,7 +179,7 @@ class LocationIndex:
                 self.regions[alias] = self.regions[normalize_text(name)]
 
     def find_city(self, text: str):
-        """Cerca il nome di comune più lungo contenuto nel testo (fino a 5 parole)."""
+        """Looks for the longest municipality name in the text (up to 5 words)."""
         words = normalize_text(text).split()
         best = None
         for size in range(min(5, len(words)), 0, -1):
@@ -185,7 +187,7 @@ class LocationIndex:
                 phrase = " ".join(words[i:i + size])
                 phrase = EXONYMS.get(phrase, phrase)
                 c = self.by_name.get(phrase)
-                # nomi molto corti (es. "Re", "Ne", "Vo") solo se sono tutta la sede
+                # very short names (e.g. "Re", "Ne", "Vo") only if they are the whole location
                 if c and (len(phrase) >= 4 or phrase == " ".join(words)):
                     if not best or (c["population"] or 0) > (best["population"] or 0):
                         best = c
@@ -201,22 +203,22 @@ class LocationIndex:
         return None
 
     def normalize(self, raw: str, country: str = None, workplace: str = None) -> dict:
-        """Da 'Milan, Lombardy, Italy' a {location_id, city, country, is_remote}."""
+        """From 'Milan, Lombardy, Italy' to {location_id, city, country, is_remote}."""
         raw = raw or ""
         remote = bool(REMOTE_RE.search(raw)) or (workplace or "").lower() in ("remote", "fully_remote")
         country_it = country and str(country).strip().lower() in ITALY_COUNTRY_CODES
         city = self.find_city(raw) if raw else None
         if city and FOREIGN_RE.search(raw) and not (country_it or re.search(r"\bital", raw, re.I)):
-            city = None     # es. "Paris, France": "Paris" non è un comune, ma evitiamo omonimie
+            city = None     # e.g. "Paris, France": "Paris" is not a municipality, but avoid homonyms
         if city:
-            return {"location_id": city["location_id"], "city": city["city"], "country": "Italia",
+            return {"location_id": city["location_id"], "city": city["city"], "country": "Italy",
                     "is_remote": int(remote)}
         region = self.find_region(raw)
         if region and not FOREIGN_RE.search(raw):
-            return {"location_id": f"IT-REG-{region['region_code']}", "city": None, "country": "Italia",
+            return {"location_id": f"IT-REG-{region['region_code']}", "city": None, "country": "Italy",
                     "is_remote": int(remote)}
         if country_it or re.search(r"\bital(?:y|ia)\b", raw, re.I):
-            return {"location_id": "IT-REMOTE" if remote else "IT", "city": None, "country": "Italia",
+            return {"location_id": "IT-REMOTE" if remote else "IT", "city": None, "country": "Italy",
                     "is_remote": int(remote)}
         if remote and EUROPE_RE.search(raw) and not FOREIGN_RE.search(raw):
             return {"location_id": "EU-REMOTE", "city": None, "country": None, "is_remote": 1}

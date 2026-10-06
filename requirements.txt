@@ -2,6 +2,6 @@ requests>=2.31
 requests-cache>=1.2
 playwright>=1.45
 pytest>=8
-duckdb>=1.1          # analisi SQL locale sul DB
-# opzionale: solo se si vuole caricare su BigQuery (fase 3)
+duckdb>=1.1          # local SQL analysis on the DB
+# optional: only to load the data into BigQuery (phase 3)
 google-cloud-bigquery>=3.20

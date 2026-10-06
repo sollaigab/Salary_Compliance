@@ -1,37 +1,37 @@
-// Osservatorio trasparenza retributiva: legge le celle aggregate (data/aggregati.json).
-// Ogni cella = periodo x settore x una dimensione. Le celle sotto soglia non esistono nel file:
-// i grafici mostrano solo ciò che le regole di protezione hanno reso pubblico.
+// Salary transparency observatory: reads the aggregate cells (data/aggregates.json).
+// Each cell = period x sector x one dimension. Cells below the thresholds are not in the file:
+// the charts show only what the protection rules made public.
 
-const nf = new Intl.NumberFormat("it-IT", { maximumFractionDigits: 1, useGrouping: "always" });
-const nf0 = new Intl.NumberFormat("it-IT", { maximumFractionDigits: 0, useGrouping: "always" });
-const df = new Intl.DateTimeFormat("it-IT", { day: "numeric", month: "short", year: "numeric" });
+const nf = new Intl.NumberFormat("en-GB", { maximumFractionDigits: 1, useGrouping: "always" });
+const nf0 = new Intl.NumberFormat("en-GB", { maximumFractionDigits: 0, useGrouping: "always" });
+const df = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" });
 
 const $ = (sel) => document.querySelector(sel);
 let cells = [], labels = {};
 
-// ------------------------------------------------------------------ tema
+// ------------------------------------------------------------------ theme
 
 function setupTheme() {
   const root = document.documentElement;
   try {
     const saved = localStorage.getItem("theme");
     if (saved) root.dataset.theme = saved;
-  } catch { /* storage non disponibile: si segue il sistema */ }
+  } catch { /* storage unavailable: follow the system */ }
   $("#theme-toggle").addEventListener("click", () => {
     const dark = root.dataset.theme
       ? root.dataset.theme === "dark"
       : matchMedia("(prefers-color-scheme: dark)").matches;
     root.dataset.theme = dark ? "light" : "dark";
-    try { localStorage.setItem("theme", root.dataset.theme); } catch { /* ignora */ }
+    try { localStorage.setItem("theme", root.dataset.theme); } catch { /* ignore */ }
   });
 }
 
-// ------------------------------------------------------------------ dati
+// ------------------------------------------------------------------ data
 
 const label = (dim, value) => (labels[dim] && labels[dim][value]) || value;
 const pct = (v) => (v == null ? "-" : `${nf.format(v)}%`);
-const euro = (v) => (v == null ? "-" : `${nf0.format(v)} €`);
-const range = (lo, hi) => (lo == null ? "-" : lo === hi ? euro(lo) : `${nf0.format(lo)} - ${euro(hi)}`);
+const euro = (v) => (v == null ? "-" : `€${nf0.format(v)}`);
+const range = (lo, hi) => (lo == null ? "-" : lo === hi ? euro(lo) : `${euro(lo)} - ${euro(hi)}`);
 
 function select(period, macro, dim) {
   return cells.filter((c) => c.period === period && c.macro === macro && c.dim === dim);
@@ -39,13 +39,13 @@ function select(period, macro, dim) {
 
 function readFilters() {
   const form = new FormData($("#filters"));
-  return { period: form.get("period") || "post_legge", macro: form.get("macro") || "tutti" };
+  return { period: form.get("period") || "post_law", macro: form.get("macro") || "all" };
 }
 
 function filtersToHash(f) {
   const params = new URLSearchParams();
-  if (f.period !== "post_legge") params.set("period", f.period);
-  if (f.macro !== "tutti") params.set("macro", f.macro);
+  if (f.period !== "post_law") params.set("period", f.period);
+  if (f.macro !== "all") params.set("macro", f.macro);
   const hash = params.toString();
   history.replaceState(null, "", hash ? `#${hash}` : location.pathname);
 }
@@ -79,7 +79,7 @@ function attachTooltip(el, value, name, extra = "") {
   el.addEventListener("blur", () => { tip.hidden = true; });
 }
 
-// ------------------------------------------------------------------ componenti dei grafici
+// ------------------------------------------------------------------ chart parts
 
 function axis(ticks, toPct, fmt, extraClass = "") {
   const row = document.createElement("div");
@@ -108,7 +108,7 @@ function gridlines(ticks, toPct) {
   return g;
 }
 
-const NO_DATA = "Con questi filtri gli annunci o le aziende sono troppo pochi: il dettaglio renderebbe riconoscibili le singole aziende.";
+const NO_DATA = "With these filters there are too few job ads or companies: the detail would make single companies recognizable.";
 
 function emptyChart(fig) {
   const p = document.createElement("p");
@@ -118,7 +118,7 @@ function emptyChart(fig) {
   renderTableView(fig, [], []);
 }
 
-// barre orizzontali, una serie; con "highlight" le altre barre passano al grigio (enfasi)
+// horizontal bars, one series; with "highlight" the other bars turn grey (emphasis)
 function renderBars(fig, rows, { highlight = null } = {}) {
   if (!rows.length) return emptyChart(fig);
   const body = fig.querySelector(".chart-body");
@@ -144,15 +144,15 @@ function renderBars(fig, rows, { highlight = null } = {}) {
     val.textContent = pct(r.pct_with_salary);
     plot.append(bar, val);
     row.append(lab, plot);
-    attachTooltip(row, pct(r.pct_with_salary), r.name, `${nf0.format(r.n_jobs)} annunci, ${r.n_companies} aziende`);
+    attachTooltip(row, pct(r.pct_with_salary), r.name, `${nf0.format(r.n_jobs)} job ads, ${r.n_companies} companies`);
     bars.append(row);
   }
   body.replaceChildren(bars, axis(ticks, toPct, (v) => `${v}%`, "axis-bars"));
-  renderTableView(fig, ["", "Annunci", "Aziende", "Con retribuzione", "Solo formula vaga"],
+  renderTableView(fig, ["", "Job ads", "Companies", "State the pay", "Vague wording only"],
     rows.map((r) => [r.name, nf0.format(r.n_jobs), nf0.format(r.n_companies), pct(r.pct_with_salary), pct(r.pct_vague)]));
 }
 
-// dumbbell: minimo e massimo della fascia (mediane), due tonalità dello stesso blu
+// dumbbell: minimum and maximum of the range (medians), two shades of the same blue
 function renderDumbbell(fig, rows) {
   rows = rows.filter((r) => r.ral_min_median != null);
   if (!rows.length) return emptyChart(fig);
@@ -187,11 +187,11 @@ function renderDumbbell(fig, rows) {
     dHi.style.left = `${toPct(r.ral_max_median)}%`;
     plot.append(line, dLo, dHi);
     row.append(lab, plot);
-    attachTooltip(row, range(r.ral_min_median, r.ral_max_median), r.name, `${nf0.format(r.n_ral)} annunci con cifra`);
+    attachTooltip(row, range(r.ral_min_median, r.ral_max_median), r.name, `${nf0.format(r.n_ral)} job ads with a figure`);
     bars.append(row);
   }
-  body.replaceChildren(bars, axis(ticks, toPct, (v) => `${nf0.format(v / 1000)}k`));
-  renderTableView(fig, ["", "Annunci con cifra", "Minimo (mediana)", "Massimo (mediana)"],
+  body.replaceChildren(bars, axis(ticks, toPct, (v) => `€${nf0.format(v / 1000)}k`));
+  renderTableView(fig, ["", "Job ads with a figure", "Minimum (median)", "Maximum (median)"],
     rows.map((r) => [r.name, nf0.format(r.n_ral), euro(r.ral_min_median), euro(r.ral_max_median)]));
 }
 
@@ -209,12 +209,12 @@ function renderTableView(fig, head, rows) {
   holder.replaceChildren(table);
 }
 
-// ------------------------------------------------------------------ aggiornamento
+// ------------------------------------------------------------------ update
 
 const named = (rows, dim) => rows.map((r) => ({ ...r, name: label(dim, r.value) }));
 const byPct = (a, b) => b.pct_with_salary - a.pct_with_salary || b.n_jobs - a.n_jobs;
 const SENIORITY_ORDER = ["intern", "junior", "mid", "senior", "lead", "manager", "director", "executive"];
-const PERIOD_ORDER = ["storico", "pre_legge", "post_legge"];
+const PERIOD_ORDER = ["old", "pre_law", "post_law"];
 
 function update() {
   const results = $("#results");
@@ -222,25 +222,25 @@ function update() {
   const f = readFilters();
   filtersToHash(f);
 
-  const [k] = select(f.period, f.macro, "totale");
+  const [k] = select(f.period, f.macro, "total");
   $("#kpi-pct").textContent = k ? pct(k.pct_with_salary) : "-";
   $("#kpi-ral").textContent = k ? range(k.ral_min_median, k.ral_max_median) : "-";
   $("#kpi-jobs").textContent = k ? nf0.format(k.n_jobs) : "-";
   $("#kpi-companies").textContent = k ? nf0.format(k.n_companies) : "-";
   $("#kpi-vague").textContent = k ? pct(k.pct_vague) : "-";
 
-  renderBars($("#chart-macro"), named(select(f.period, "tutti", "macro_sector"), "macro_sector").sort(byPct),
-    { highlight: f.macro !== "tutti" ? f.macro : null });
+  renderBars($("#chart-macro"), named(select(f.period, "all", "macro_sector"), "macro_sector").sort(byPct),
+    { highlight: f.macro !== "all" ? f.macro : null });
   renderBars($("#chart-region"), named(select(f.period, f.macro, "region"), "region").sort(byPct));
   renderDumbbell($("#chart-function"),
     named(select(f.period, f.macro, "job_function"), "job_function").sort((a, b) => b.ral_max_median - a.ral_max_median));
   renderDumbbell($("#chart-seniority"),
-    named(select(f.period, f.macro, "seniority"), "seniority")
+    named(select(f.period, f.macro, "seniority").filter((r) => r.value !== "not_stated"), "seniority")
       .sort((a, b) => SENIORITY_ORDER.indexOf(a.value) - SENIORITY_ORDER.indexOf(b.value)));
   renderBars($("#chart-contract"),
-    named(select(f.period, f.macro, "contract_type").filter((r) => r.value !== "non_indicato"), "contract_type").sort(byPct));
+    named(select(f.period, f.macro, "contract_type").filter((r) => r.value !== "not_stated"), "contract_type").sort(byPct));
   renderBars($("#chart-period"),
-    named(select("tutti", f.macro, "posting_period").filter((r) => r.value !== "non_indicato"), "posting_period")
+    named(select("all", f.macro, "posting_period").filter((r) => r.value !== "not_stated"), "posting_period")
       .sort((a, b) => PERIOD_ORDER.indexOf(a.value) - PERIOD_ORDER.indexOf(b.value)));
 
   results.classList.remove("is-loading");
@@ -248,7 +248,7 @@ function update() {
 
 async function loadAll() {
   const [meta, lab, data] = await Promise.all(
-    ["data/meta.json", "data/labels.json", "data/aggregati.json"].map((u) => fetch(u).then((r) => {
+    ["data/meta.json", "data/labels.json", "data/aggregates.json"].map((u) => fetch(u).then((r) => {
       if (!r.ok) throw new Error(`${u}: ${r.status}`);
       return r.json();
     })));
@@ -259,7 +259,7 @@ async function loadAll() {
     const v = el.dataset.meta.split(".").reduce((o, k) => o && o[k], meta);
     el.textContent = /^\d{4}-\d{2}-\d{2}$/.test(v) ? df.format(new Date(v)) : typeof v === "number" ? nf0.format(v) : v;
   });
-  $("#stamp").textContent = `Annunci di ${meta.n_companies_active} aziende, osservati dal ${df.format(new Date(meta.observed_from))}. Ultimo aggiornamento: ${df.format(new Date(meta.last_update))}.`;
+  $("#stamp").textContent = `Job ads observed since ${df.format(new Date(meta.observed_from))}. Last update: ${df.format(new Date(meta.last_update))}.`;
   const macroSelect = $('#filters [name="macro"]');
   Object.entries(labels.macro_sector)
     .filter(([code]) => cells.some((c) => c.macro === code))
@@ -276,8 +276,8 @@ async function main() {
     const e = $("#error");
     e.hidden = false;
     e.textContent = location.protocol === "file:"
-      ? "La pagina va aperta tramite un server locale, non come file. Dalla cartella del progetto: python -m http.server -d webapp 8000, poi apri http://localhost:8000"
-      : "Non è stato possibile caricare i dati. Ricarica la pagina; se il problema continua, controlla la connessione.";
+      ? "Open the page through a local server, not as a file. From the project folder: python -m http.server -d webapp 8000, then open http://localhost:8000"
+      : "The data could not be loaded. Reload the page; if the problem persists, check your connection.";
     $("#results").hidden = true;
     $("#stamp").textContent = "";
     return;

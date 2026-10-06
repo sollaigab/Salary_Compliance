@@ -1,6 +1,6 @@
-/* Osservatorio trasparenza retributiva
-   Colori: palette di riferimento validata (skill dataviz), un solo accento blu.
-   Forme: controlli 6px; barre con estremo dati arrotondato 4px e base squadrata (spec dataviz). */
+/* Salary transparency observatory
+   Colors: validated reference palette (dataviz skill), a single blue accent.
+   Shapes: 6px controls; bars with a 4px rounded data end and a square base (dataviz spec). */
 
 :root {
   color-scheme: light;
@@ -8,14 +8,14 @@
   --surface: #fcfcfb;
   --ink: #0b0b0b;
   --ink-2: #52514e;
-  --muted: #6f6d68;          /* più scuro del muted di riferimento: testo piccolo sopra 4.5:1 */
+  --muted: #6f6d68;          /* darker than the reference muted: small text above 4.5:1 */
   --grid: #e1e0d9;
   --axis: #c3c2b7;
   --ring: rgba(11, 11, 11, 0.10);
-  --accent: #2a78d6;         /* serie 1, validata su #fcfcfb */
-  --accent-ink: #1c5cab;     /* link e testo d'accento: contrasto testo AA */
-  --range-lo: #86b6ef;       /* dumbbell: minimo (ordinal, validato) */
-  --range-hi: #256abf;       /* dumbbell: massimo */
+  --accent: #2a78d6;         /* series 1, validated on #fcfcfb */
+  --accent-ink: #1c5cab;     /* links and accent text: AA text contrast */
+  --range-lo: #86b6ef;       /* dumbbell: minimum (ordinal, validated) */
+  --range-hi: #256abf;       /* dumbbell: maximum */
   --radius: 6px;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
@@ -75,9 +75,9 @@ p { margin: 0; }
 .wrap { width: 100%; max-width: 1200px; margin: 0 auto; padding: 0 24px; }
 @media (max-width: 767px) { .wrap { padding: 0 16px; } }
 
-/* barra in alto */
+/* top bar */
 .topbar {
-  position: sticky; top: 0; z-index: 10;          /* unico livello sopra il contenuto (oltre al tooltip) */
+  position: sticky; top: 0; z-index: 10;          /* the only layer above the content (besides the tooltip) */
   background: color-mix(in srgb, var(--page) 92%, transparent);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--ring);
@@ -103,14 +103,13 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 [tabindex]:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 2px;
 }
-.link { background: none; border: 0; padding: 0; color: var(--accent-ink); text-decoration: underline; cursor: pointer; }
 
-/* introduzione */
+/* intro */
 .intro { padding-top: 56px; padding-bottom: 24px; }
 .lede { margin-top: 16px; font-size: 1.15rem; color: var(--ink-2); max-width: 60ch; }
 .stamp { margin-top: 12px; color: var(--muted); font-size: 0.9rem; }
 
-/* filtri: una riga sopra tutto ciò che filtrano */
+/* filters: one row above everything they filter */
 .filters { padding-top: 12px; padding-bottom: 16px; border-bottom: 1px solid var(--ring); }
 #filters { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: flex-end; }
 #filters label { display: grid; gap: 4px; font-size: 0.8rem; color: var(--ink-2); }
@@ -126,12 +125,12 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
   #filters select { max-width: none; width: 100%; }
 }
 
-/* stato di aggiornamento: si tiene il disegno precedente, attenuato */
+/* updating state: keep the previous drawing, dimmed */
 .results { transition: opacity 0.2s ease; }
 .results.is-loading { opacity: 0.45; }
 @media (prefers-reduced-motion: reduce) { .results { transition: none; } }
 
-/* numeri principali */
+/* headline numbers */
 .headline {
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
   gap: 32px; align-items: end; padding-top: 40px; padding-bottom: 40px;
@@ -147,10 +146,10 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-.empty, .error { padding: 32px 24px; color: var(--ink-2); }
+.error { padding: 32px 24px; color: var(--ink-2); }
 .error { color: var(--ink); background: var(--surface); border: 1px solid var(--axis); border-radius: var(--radius); }
 
-/* grafici */
+/* charts */
 .charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 48px 40px; padding-bottom: 24px; }
 @media (max-width: 900px) { .charts { grid-template-columns: 1fr; } }
 .chart { margin: 0; min-width: 0; }
@@ -163,7 +162,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 .key-lo { background: var(--range-lo); }
 .key-hi { background: var(--range-hi); }
 
-/* barre orizzontali: etichetta | area grafico | valore alla punta */
+/* horizontal bars: label | plot area | value at the tip */
 .bars { display: grid; gap: 6px; }
 .bar-row {
   display: grid; grid-template-columns: minmax(110px, 34%) minmax(0, 1fr);
@@ -171,16 +170,16 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 }
 .bar-row:hover, .bar-row:focus-visible { background: color-mix(in srgb, var(--accent) 6%, transparent); }
 .bar-label { font-size: 0.88rem; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* il margine destro ospita il valore in punta: barre, griglia e asse usano la stessa larghezza */
+/* the right margin holds the tip value: bars, grid and axis share the same width */
 .bar-plot { position: relative; height: 22px; display: flex; align-items: center; padding-right: 60px; }
 .bar-plot .gridlines { right: 60px; }
 .axis-bars .axis-scale { margin-right: 60px; }
 .dumb-plot { margin-right: 8px; }
 .bar {
   height: 14px; background: var(--accent);
-  border-radius: 0 4px 4px 0;            /* estremo dati arrotondato, base squadrata */
+  border-radius: 0 4px 4px 0;            /* rounded data end, square base */
   min-width: 2px;
-  flex: none;                            /* la barra non si comprime: lunghezza = valore */
+  flex: none;                            /* the bar does not shrink: length = value */
 }
 .bar-value { margin-left: 8px; font-size: 0.85rem; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
@@ -196,7 +195,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 .gridlines i { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--grid); }
 .bar-plot > .bar, .bar-plot > .bar-value { position: relative; }
 
-/* dumbbell: linea tra minimo e massimo, puntini con anello del colore di sfondo */
+/* dumbbell: line from minimum to maximum, dots with a ring in the background color */
 .dumb-plot { position: relative; height: 22px; }
 .dumb-line { position: absolute; top: 10px; height: 2px; background: var(--axis); border-radius: 1px; }
 .dot {
@@ -206,7 +205,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 .dot-lo { background: var(--range-lo); }
 .dot-hi { background: var(--range-hi); }
 
-/* tabelle */
+/* tables */
 .table-view { margin-top: 12px; font-size: 0.85rem; }
 .table-view summary { cursor: pointer; color: var(--accent-ink); }
 .table-scroll { overflow-x: auto; margin-top: 12px; }
@@ -215,28 +214,22 @@ table.data th {
   text-align: left; font-weight: 600; color: var(--ink-2); font-size: 0.8rem;
   padding: 8px 10px; border-bottom: 1px solid var(--axis); white-space: nowrap;
 }
-table.data th[data-sort] { cursor: pointer; }
-table.data th[aria-sort="ascending"]::after { content: " \2191"; }
-table.data th[aria-sort="descending"]::after { content: " \2193"; }
 table.data td { padding: 8px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
 table.data td.num, table.data th.num { text-align: right; font-variant-numeric: tabular-nums; }
 table.data tbody tr:hover { background: var(--surface); }
 
 .block { padding-top: 48px; padding-bottom: 8px; }
 .note { margin-top: 6px; color: var(--ink-2); font-size: 0.9rem; }
-.pager { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
-.pager span { color: var(--ink-2); font-size: 0.9rem; }
 
-.tag { font-size: 0.8rem; color: var(--ink-2); white-space: nowrap; }
 
-/* metodologia */
+/* methodology */
 .method { padding-bottom: 80px; margin-top: 32px; border-top: 1px solid var(--ring); }
 .method-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px; margin-top: 8px; }
 .method-grid p, .method-grid li { color: var(--ink-2); max-width: 62ch; margin-top: 8px; }
 .method-grid ul { padding-left: 18px; margin: 0; }
 @media (max-width: 900px) { .method-grid { grid-template-columns: 1fr; gap: 0; } }
 
-/* tooltip: valore in evidenza, etichetta dopo */
+/* tooltip: value first, label after */
 .tooltip {
   position: fixed; z-index: 20; pointer-events: none;
   background: var(--surface); color: var(--ink);
@@ -247,12 +240,16 @@ table.data tbody tr:hover { background: var(--surface); }
 .tooltip strong { display: block; font-size: 1rem; }
 .tooltip span { color: var(--ink-2); }
 
-/* scheletro di caricamento: stessa forma delle barre */
-.skeleton { height: 14px; border-radius: 0 4px 4px 0; background: var(--grid); }
-
-/* enfasi: il settore selezionato resta nel colore d'accento, gli altri passano al grigio */
+/* emphasis: the selected sector keeps the accent color, the others turn grey */
 .bar-muted { background: var(--axis); }
 .chart-empty { color: var(--ink-2); font-size: 0.9rem; max-width: 52ch; }
 #filters label.wide select { max-width: 360px; }
 .filters .note { margin-top: 10px; }
 .download a { font-weight: 600; }
+
+/* narrow screens: the label goes above the bar so it is not cut off */
+@media (max-width: 600px) {
+  .bar-row, .axis { grid-template-columns: 1fr; gap: 2px; }
+  .bar-label { white-space: normal; }
+  .axis > span:first-child { display: none; }
+}

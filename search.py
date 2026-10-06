@@ -1,14 +1,14 @@
 """
-Fase 3: ricerca negli annunci salvati e storico delle ricerche.
+Phase 3: search the stored job ads and keep a search history.
 
-Uso:
+Usage:
     python search.py "data analyst"
-    python search.py "data analyst" --location milano       # città, provincia (MI), regione o macro-area
-    python search.py "sviluppatore" --location remoto       # annunci da remoto
+    python search.py "data analyst" --location milano       # city, province (MI), region or macro-area
+    python search.py "sviluppatore" --location remote       # remote ads
     python search.py "commerciale" --location lombardia --show 10
-    python search.py "contabile" --all                      # anche gli annunci non più attivi
+    python search.py "contabile" --all                      # inactive ads too
 
-Ogni ricerca salva una riga in `searches`; lo storico si vede con la vista v_search_summary:
+Each search saves a row in `searches`; the history is in the v_search_summary view:
     SELECT * FROM v_search_summary;
 """
 
@@ -18,8 +18,8 @@ import sys
 
 from lib import db
 
-# Annunci che contengono il termine nel titolo o nella descrizione, con filtro opzionale sul luogo.
-# Il luogo si confronta con la sede principale e con tutte le sedi dell'annuncio (job_locations).
+# Ads containing the term in the title or description, with an optional location filter.
+# The location is matched against the main location and every location of the ad (job_locations).
 SEARCH_SQL = """
 SELECT j.job_key, j.title, j.url, j.city, j.salary_transparency, j.posting_period,
        j.ral_min_annual, j.ral_max_annual, c.name AS company
@@ -51,22 +51,22 @@ def median(values):
 
 
 def main():
-    p = argparse.ArgumentParser(description="Cerca negli annunci salvati")
-    p.add_argument("term", help='termine da cercare, es. "data analyst"')
-    p.add_argument("--location", help="città, sigla provincia, regione, macro-area o 'remoto'")
-    p.add_argument("--all", action="store_true", help="includi anche gli annunci non più attivi")
-    p.add_argument("--show", type=int, default=0, help="mostra N annunci di esempio")
-    p.add_argument("--periodo", choices=["post_legge", "pre_legge", "storico"],
-                   help="solo annunci pubblicati dal 7/6/2026 (post_legge), prima, o da oltre 12 mesi (storico)")
+    p = argparse.ArgumentParser(description="Search the stored job ads")
+    p.add_argument("term", help='term to search for, e.g. "data analyst"')
+    p.add_argument("--location", help="city, province code, region, macro-area or 'remote'")
+    p.add_argument("--all", action="store_true", help="include inactive ads too")
+    p.add_argument("--show", type=int, default=0, help="show N example ads")
+    p.add_argument("--period", choices=["post_law", "pre_law", "old"],
+                   help="only ads published from 7/6/2026 (post_law), before it, or over 12 months ago (old)")
     args = p.parse_args()
 
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     conn = db.connect()
     location = args.location.strip().lower() if args.location else None
     rows = conn.execute(SEARCH_SQL, {"term": f"%{args.term.lower()}%", "location": location,
-                                     "all_jobs": int(args.all), "period": args.periodo}).fetchall()
+                                     "all_jobs": int(args.all), "period": args.period}).fetchall()
 
-    with_salary = [r for r in rows if r["salary_transparency"] == "cifra"]
+    with_salary = [r for r in rows if r["salary_transparency"] == "figure"]
     summary = {
         "search_term": args.term,
         "location": args.location,
@@ -74,7 +74,7 @@ def main():
         "n_jobs": len(rows),
         "n_companies": len({r["company"] for r in rows}),
         "n_jobs_with_salary": len(with_salary),
-        "n_jobs_vague": sum(1 for r in rows if r["salary_transparency"] == "vaga"),
+        "n_jobs_vague": sum(1 for r in rows if r["salary_transparency"] == "vague"),
         "ral_min_median": median(r["ral_min_annual"] for r in rows),
         "ral_max_median": median(r["ral_max_annual"] for r in rows),
     }
@@ -82,38 +82,38 @@ def main():
                  list(summary.values()))
     conn.commit()
 
-    where = f" a/in {args.location}" if args.location else ""
-    where += f" [{args.periodo}]" if args.periodo else ""
-    print(f'\n"{args.term}"{where}: {summary["n_jobs"]} annunci da {summary["n_companies"]} aziende')
+    where = f" in {args.location}" if args.location else ""
+    where += f" [{args.period}]" if args.period else ""
+    print(f'\n"{args.term}"{where}: {summary["n_jobs"]} ads from {summary["n_companies"]} companies')
     if not rows:
         return
     pct = lambda n: f"{100 * n / len(rows):.0f}%"
-    print(f"  con retribuzione in cifra: {summary['n_jobs_with_salary']} ({pct(summary['n_jobs_with_salary'])})"
-          f"  | solo formula vaga: {summary['n_jobs_vague']} ({pct(summary['n_jobs_vague'])})")
-    if not args.periodo:
+    print(f"  with a pay figure: {summary['n_jobs_with_salary']} ({pct(summary['n_jobs_with_salary'])})"
+          f"  | vague wording only: {summary['n_jobs_vague']} ({pct(summary['n_jobs_vague'])})")
+    if not args.period:
         periods = {}
         for r in rows:
-            periods.setdefault(r["posting_period"] or "senza data", []).append(r)
-        parts = [f"{k}: {len(v)} ({100 * sum(x['salary_transparency'] == 'cifra' for x in v) / len(v):.0f}% con cifra)"
+            periods.setdefault(r["posting_period"] or "no date", []).append(r)
+        parts = [f"{k}: {len(v)} ({100 * sum(x['salary_transparency'] == 'figure' for x in v) / len(v):.0f}% with figure)"
                  for k, v in sorted(periods.items())]
-        print("  per periodo -> " + " | ".join(parts))
+        print("  by period -> " + " | ".join(parts))
     if summary["ral_min_median"]:
-        print(f"  RAL mediana: {summary['ral_min_median']:,} - {summary['ral_max_median']:,} €".replace(",", "."))
+        print(f"  median annual salary: €{summary['ral_min_median']:,} - €{summary['ral_max_median']:,}")
 
-    # tabella per azienda
+    # table by company
     by_company = {}
     for r in rows:
         by_company.setdefault(r["company"], []).append(r)
-    print(f"\n  {'Azienda':<34} {'annunci':>7} {'con cifra':>9} {'vaghe':>6}   RAL mediana")
+    print(f"\n  {'Company':<34} {'ads':>7} {'figure':>9} {'vague':>6}   median salary")
     for company, items in sorted(by_company.items(), key=lambda kv: -len(kv[1])):
-        n_sal = sum(1 for r in items if r["salary_transparency"] == "cifra")
-        n_vague = sum(1 for r in items if r["salary_transparency"] == "vaga")
+        n_sal = sum(1 for r in items if r["salary_transparency"] == "figure")
+        n_vague = sum(1 for r in items if r["salary_transparency"] == "vague")
         lo, hi = median(r["ral_min_annual"] for r in items), median(r["ral_max_annual"] for r in items)
-        ral = f"{lo:,} - {hi:,} €".replace(",", ".") if lo else "-"
+        ral = f"€{lo:,} - €{hi:,}" if lo else "-"
         print(f"  {company[:34]:<34} {len(items):>7} {n_sal:>9} {n_vague:>6}   {ral}")
 
     for r in rows[:args.show]:
-        ral = f"{round(r['ral_min_annual']):,}-{round(r['ral_max_annual']):,} €".replace(",", ".") \
+        ral = f"€{round(r['ral_min_annual']):,}-{round(r['ral_max_annual']):,}" \
             if r["ral_min_annual"] else r["salary_transparency"]
         print(f"\n  - {r['title']} · {r['company']} · {r['city'] or ''} · {ral}\n    {r['url']}")
 

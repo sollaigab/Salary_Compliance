@@ -1,8 +1,8 @@
 """
-Arricchimento degli annunci: i campi che servono per i filtri della web app e per le analisi.
+Job ad enrichment: the fields used by the web app filters and by the analysis.
 
-Tutto con regole semplici (regex su titolo, reparto, tipo contratto e testo), leggibili e
-modificabili a mano. L'ordine delle regole conta: vince la prima che trova qualcosa.
+Everything uses simple rules (regexes on title, department, contract type and text) that are easy
+to read and edit by hand. Rule order matters: the first rule that matches wins.
 """
 
 import re
@@ -18,15 +18,15 @@ PHONE_RE = re.compile(r"(?:\+|00)\d{2}[\s./-]?\d{2,4}[\s./-]?\d{3,4}[\s./-]?\d{2
 
 
 def scrub_personal_data(text: str) -> str:
-    """Toglie email e numeri di telefono (spesso dei recruiter): non li salviamo (GDPR)."""
-    return PHONE_RE.sub("[telefono]", EMAIL_RE.sub("[email]", text or ""))
+    """Removes email addresses and phone numbers (often the recruiter's): they are never stored (GDPR)."""
+    return PHONE_RE.sub("[phone]", EMAIL_RE.sub("[email]", text or ""))
 
 
 # ---------------------------------------------------------------- seniority
 
 SENIORITY_RULES = [
     ("intern", r"\b(?:intern|internship|stage|stagista|tirocini\w*|trainee|curricular)\b"),
-    # dirigenti apicali: solo il ruolo vero ("Chief Financial Officer", "CFO"), non "Chief Engineer"
+    # executives: only the actual role ("Chief Financial Officer", "CFO"), not "Chief Engineer"
     ("executive", r"\b(?:chief(?: \w+){1,3} officer|ceo|cfo|cto|coo|cio|cmo|ciso|chro|managing director"
                   r"|amministratore delegato|direttore generale|general manager)\b"),
     ("manager", r"\b(?:deputy|vice|assistant|assistente)(?: \w+)? (?:director|direttore)\b"),
@@ -37,11 +37,11 @@ SENIORITY_RULES = [
     ("junior", r"\b(?:junior|jr|entry level|graduate|neolaureat\w*|apprendist\w*|apprentice|associate)\b"),
 ]
 
-# nomi di practice o uffici che contengono una sigla da dirigente ma non sono un ruolo
+# practice or office names that contain an executive acronym but are not a role
 # ("CFO Services - Senior Consultant", "CEO Office Analyst")
 PRACTICE_RE = re.compile(r"\b(?:cfo|ceo|cio|cto|coo|cmo|chro)\s+(?:services?|advisory|office|agenda"
                          r"|transformation|practice|program\w*|solutions?)\b")
-# grado esplicito in fondo al titolo, dopo un trattino ("... - Senior Consultant"): è l'informazione più affidabile
+# explicit grade at the end of the title, after a dash ("... - Senior Consultant"): the most reliable signal
 GRADE_ONLY_RE = re.compile(r"^(?:consultant|analyst|specialist|associate|consulente|analista|specialista)$")
 
 
@@ -63,10 +63,10 @@ def seniority(title: str) -> str:
     return classify(title or "") or "mid"
 
 
-# ---------------------------------------------------------------- seniority dagli anni di esperienza
+# ---------------------------------------------------------------- seniority from years of experience
 
 _YEARS = r"(?:anni|anno|years?|year's|yrs)"
-# numero isolato (non "15" dentro "150"), eventualmente seguito dall'estremo superiore della fascia
+# a standalone number (not "15" inside "150"), optionally followed by the upper end of a range
 _NUM_RANGE = r"(?<!\d)(\d{1,2})(?!\d)\s*(?:\+|-|–|\s+a\s+|\s+to\s+|\s+o\s+più|\s+or\s+more)?\s*(?:\d{1,2}(?!\d))?"
 EXPERIENCE_RES = [
     # "3-5 anni di esperienza", "da 3 a 6 anni di esperienza", "4+ years of experience", "[4-10 years] of experience"
@@ -76,11 +76,11 @@ EXPERIENCE_RES = [
     # "at least 3 years", "minimum of 4 years", "almeno 5 anni"
     re.compile(rf"(?:at least|minimum(?: of)?|almeno|minimo(?: di)?)\s*(\d{{1,2}})(?!\d)\s*\+?\s*{_YEARS}\b", re.I),
 ]
-MAX_PLAUSIBLE_YEARS = 15     # "150 anni di esperienza" è la storia dell'azienda, non un requisito
+MAX_PLAUSIBLE_YEARS = 15     # "150 anni di esperienza" is company history, not a requirement
 
 
 def experience_years(text: str) -> int | None:
-    """Anni minimi di esperienza richiesti, se il testo li indica."""
+    """Minimum years of experience required, if the text states them."""
     for rx in EXPERIENCE_RES:
         for m in rx.finditer(text or ""):
             years = int(m.group(1))
@@ -100,22 +100,22 @@ def seniority_from_years(years: int | None) -> str | None:
 
 
 def seniority_with_source(title: str, description: str) -> tuple[str, str, int | None]:
-    """(livello, fonte, anni). Il titolo ha la precedenza; se non dice nulla, contano gli anni richiesti.
-    fonte: 'titolo' / 'esperienza' / 'non_indicata'."""
+    """(level, source, years). The title wins; if it says nothing, the required years decide.
+    source: 'title' / 'experience' / 'not_stated'."""
     years = experience_years(description)
     level = seniority(title)
     if level != "mid" or re.search(r"\b(?:mid|intermedi\w*|middle)\b", normalize_text(title)):
-        return level, "titolo", years
+        return level, "title", years
     from_years = seniority_from_years(years)
     if from_years:
-        return from_years, "esperienza", years
-    return "mid", "non_indicata", years
+        return from_years, "experience", years
+    return "mid", "not_stated", years
 
 
-# ---------------------------------------------------------------- funzione aziendale
+# ---------------------------------------------------------------- job function
 
 FUNCTION_RULES = [
-    # mestieri molto riconoscibili prima delle regole generiche
+    # very recognizable trades before the generic rules
     ("healthcare", r"\b(?:medic\w*|infermier\w*|psicolog\w*|psicoterapeut\w*|farmacist\w*|nurse|clinical|clinic\w*"
                    r"|audioprotesist\w*|audiolog\w*|fisioterap\w*|ostetric\w*|odontoiatr\w*)\b"),
     ("hospitality", r"\b(?:barist\w*|bar|cuoc\w*|chef|commis|camerier\w*|pasticcer\w*|panettier\w*|pizzaiol\w*"
@@ -172,21 +172,26 @@ def job_function(title: str, department: str = None) -> str:
     return "other"
 
 
-# ---------------------------------------------------------------- contratto, orario, modalità
+# ---------------------------------------------------------------- contract, schedule, workplace
 
 CONTRACT_RULES = [
-    ("stage", r"\b(?:intern\w*|stage|tirocini\w*|traineeship)\b"),
-    ("apprendistato", r"\b(?:apprendist\w*|apprentice\w*)\b"),
-    ("determinato", r"\b(?:tempo determinato|fixed[ -]term|temporary|temporaneo|contratto a termine|sostituzione"
-                    r"|maternity cover|seasonal|stagional\w*)\b"),
-    ("indeterminato", r"\b(?:tempo indeterminato|permanent|regular|indeterminato|fulltime permanent)\b"),
-    ("freelance", r"\b(?:freelance|partita iva|p iva|contractor|collaborazione|consulenza autonoma)\b"),
-    ("somministrazione", r"\b(?:somministrazione|interinale|agency worker)\b"),
+    # not intern\w*: it would match "internazionale", "international", "interna"
+    ("internship", r"\b(?:interns?|internships?|stage|stagista|tirocini\w*|traineeship)\b"),
+    ("apprenticeship", r"\b(?:apprendist\w*|apprentice\w*)\b"),
+    # "sostituzione" alone also means replacing parts ("sostituzione di tubazioni"): only staff cover
+    ("fixed_term", r"\b(?:tempo determinato|fixed[ -]term|temporary|temporaneo|contratto a termine"
+                    r"|(?:in|per|contratto di) sostituzione|sostituzione maternit\w*|maternity cover|seasonal"
+                    r"|stagional\w*)\b"),
+    ("permanent", r"\b(?:tempo indeterminato|permanent|regular|indeterminato|fulltime permanent)\b"),
+    # "collaborazione" alone is teamwork ("in collaborazione con il team"): only the contract forms
+    ("freelance", r"\b(?:freelance|partita iva|p iva|contractor|consulenza autonoma|co co co|cococo"
+                  r"|(?:contratto|rapporto) di collaborazione|collaborazione (?:coordinata|occasionale))\b"),
+    ("agency", r"\b(?:somministrazione|interinale|agency worker)\b"),
 ]
 
 
 def contract_type(employment_type: str, title: str, description: str) -> str | None:
-    # prima il campo strutturato dell'ATS, poi titolo, poi l'inizio della descrizione
+    # first the ATS structured field, then the title, then the start of the description
     for text in (employment_type, title, (description or "")[:3000]):
         t = normalize_text(text)
         if not t:
@@ -223,7 +228,7 @@ def workplace_type(ats_value: str, location: str, description: str) -> str | Non
     return None
 
 
-# ---------------------------------------------------------------- lingua
+# ---------------------------------------------------------------- language
 
 IT_WORDS = {"il", "la", "di", "che", "per", "con", "una", "del", "della", "sono", "nel", "alla", "lavoro", "esperienza"}
 EN_WORDS = {"the", "and", "of", "to", "with", "you", "our", "for", "we", "are", "your", "will", "experience"}
@@ -238,7 +243,7 @@ def description_lang(text: str) -> str | None:
     return "it" if it >= en else "en"
 
 
-# ---------------------------------------------------------------- retribuzione
+# ---------------------------------------------------------------- pay
 
 PERIODS = {
     "year": "year", "yearly": "year", "annual": "year", "1 year": "year", "per-year-salary": "year",
@@ -248,11 +253,11 @@ PERIODS = {
 
 
 def parse_structured_salary(obj):
-    """Normalizza la retribuzione strutturata dei vari ATS in {min, max, currency, period}.
+    """Normalizes the structured pay of the various ATSs into {min, max, currency, period}.
 
     Lever: {min, max, currency, interval}; Recruitee: {min, max, currency, period};
-    Ashby: lista summaryComponents [{compensationType, interval, currencyCode, minValue, maxValue}]
-           oppure stringa riassuntiva ("€35K – €45K").
+    Ashby: summaryComponents list [{compensationType, interval, currencyCode, minValue, maxValue}]
+           or a summary string ("€35K – €45K").
     """
     if not obj:
         return None
@@ -274,7 +279,7 @@ def parse_structured_salary(obj):
 
 
 def salary_fields(salary_structured, description: str, is_internship: bool = False) -> dict:
-    """Tutti i campi retribuzione della tabella jobs. Per gli stage la RAL si calcola su 12 mensilità."""
+    """All pay fields of the jobs table. For internships the annual salary uses 12 monthly payments."""
     months = 12 if is_internship else 14
     structured = parse_structured_salary(salary_structured)
     from_text = parse_salary(description)
@@ -282,11 +287,11 @@ def salary_fields(salary_structured, description: str, is_internship: bool = Fal
     gross_net = from_text["gross_net"] if from_text and source == "text" else None
     vague = is_vague(description)
     if chosen:
-        transparency = "cifra"
+        transparency = "figure"
     elif vague:
-        transparency = "vaga"
+        transparency = "vague"
     else:
-        transparency = "assente"
+        transparency = "none"
     return {
         "salary_source": source,
         "salary_min": chosen["min"] if chosen else None,
@@ -304,25 +309,25 @@ def salary_fields(salary_structured, description: str, is_internship: bool = Fal
     }
 
 
-# ---------------------------------------------------------------- periodo rispetto alla legge
+# ---------------------------------------------------------------- period relative to the law
 
-LAW_START = date(2026, 6, 7)     # D.Lgs. 96/2026: obbligo di indicare la retribuzione negli annunci
-HISTORIC_DAYS = 365              # annunci online da più di un anno: quasi sempre posizioni "sempre aperte"
+LAW_START = date(2026, 6, 7)     # D.Lgs. 96/2026: job ads must state the pay
+HISTORIC_DAYS = 365              # ads online for over a year: almost always "evergreen" positions
 
 
 def posted_date(posted_at) -> str | None:
-    """Data di pubblicazione in formato AAAA-MM-GG (gli ATS usano formati diversi)."""
+    """Publication date as YYYY-MM-DD (the ATSs use different formats)."""
     m = re.match(r"(\d{4})-(\d{2})-(\d{2})", str(posted_at or ""))
     return f"{m[1]}-{m[2]}-{m[3]}" if m else None
 
 
 def posting_period(posted: str | None, observed: str) -> str | None:
-    """post_legge (dal 7/6/2026), pre_legge (prima, ma entro 12 mesi dall'osservazione), storico (oltre)."""
+    """post_law (from 7/6/2026), pre_law (earlier, but within 12 months of observation), old (older)."""
     if not posted:
         return None
     d = date.fromisoformat(posted)
     if d >= LAW_START:
-        return "post_legge"
+        return "post_law"
     if (date.fromisoformat(observed[:10]) - d).days > HISTORIC_DAYS:
-        return "storico"
-    return "pre_legge"
+        return "old"
+    return "pre_law"

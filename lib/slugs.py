@@ -1,5 +1,5 @@
 """
-Nomi di azienda -> identificativi, slug candidati per gli ATS, verifica del nome negli annunci.
+Company names -> identifiers, candidate ATS slugs, checking the name inside job ads.
 """
 
 import re
@@ -7,13 +7,13 @@ from urllib.parse import urlparse
 
 from lib.text import normalize_text
 
-# Parole che negli slug spesso mancano o compaiono come suffisso
+# Words that slugs often drop or add as a suffix
 LEGAL_WORDS = {
     "spa", "srl", "sb", "sa", "ag", "se", "nv", "inc", "ltd", "co",
     "group", "gruppo", "italia", "italy", "holding", "the", "company",
 }
 
-# Parole troppo comuni per dire "questo annuncio è di quell'azienda"
+# Words too common to prove "this ad belongs to that company"
 GENERIC_WORDS = LEGAL_WORDS | {
     "banca", "bank", "banco", "assicurazioni", "insurance", "energia", "energy",
     "international", "servizi", "services", "italiana", "italiano", "di", "del",
@@ -24,7 +24,7 @@ GENERIC_WORDS = LEGAL_WORDS | {
 
 
 def name_tokens(name: str) -> list[str]:
-    """'acme S.p.A.' -> ['acme', 'spa']  (s p a viene ricomposto)."""
+    """'Acme S.p.A.' -> ['acme', 'spa']  (s p a is joined back together)."""
     text = normalize_text(name)
     text = re.sub(r"\bs p a\b", "spa", text)
     text = re.sub(r"\bs r l\b", "srl", text)
@@ -32,18 +32,18 @@ def name_tokens(name: str) -> list[str]:
 
 
 def company_id_from_name(name: str) -> str:
-    """Identificativo stabile: 'examplegroup' -> 'examplegroup'."""
+    """Stable identifier: 'Example Group' -> 'example-group'."""
     return "-".join(name_tokens(name))
 
 
 def core_tokens(name: str) -> list[str]:
-    """Nome senza forma giuridica e suffissi tipo group/italia."""
+    """Name without legal form and suffixes such as group/italia."""
     words = name_tokens(name)
     return [w for w in words if w not in LEGAL_WORDS] or words
 
 
 def domain_root(website: str) -> str | None:
-    """'https://group.examplegroup.com/it' -> 'examplegroup'."""
+    """'https://group.examplebank.com/it' -> 'examplebank'."""
     if not website:
         return None
     if not website.startswith("http"):
@@ -56,7 +56,7 @@ def domain_root(website: str) -> str | None:
 
 
 def candidate_slugs(name: str, website: str = None, max_n: int = 8) -> list[str]:
-    """Slug da provare sugli ATS, dal più probabile al meno probabile."""
+    """Slugs to try on the ATSs, most likely first."""
     words = name_tokens(name)
     core = core_tokens(name)
     joined, hyphen = "".join(core), "-".join(core)
@@ -73,9 +73,9 @@ def candidate_slugs(name: str, website: str = None, max_n: int = 8) -> list[str]
 
 
 def workday_tenants(name: str, website: str = None, max_n: int = 6) -> list[str]:
-    """Tenant Workday candidati, dal più probabile.
+    """Candidate Workday tenants, most likely first.
 
-    Esempi reali: examplecorp, examplecorp, examplebank, tenantd, tenante.
+    Real tenants follow patterns such as {name}company, {name}group, the domain or short initials.
     """
     core = core_tokens(name)
     joined = "".join(core)
@@ -91,7 +91,7 @@ def workday_tenants(name: str, website: str = None, max_n: int = 6) -> list[str]
 
 
 def name_variants(name: str, website: str = None) -> tuple[set, set]:
-    """Varianti 'forti' (nome intero, dominio) e 'deboli' (singole parole non generiche)."""
+    """'Strong' variants (full name, domain) and 'weak' ones (single non-generic words)."""
     core = core_tokens(name)
     full = " ".join(core)
     squeezed = full.replace(" ", "")
@@ -108,10 +108,10 @@ def name_variants(name: str, website: str = None) -> tuple[set, set]:
 
 
 def name_match(name: str, website: str, texts: list) -> str | None:
-    """Il nome dell'azienda compare nei testi degli annunci?
+    """Does the company name appear in the job ad texts?
 
-    'strong' = nome intero o dominio; 'weak' = solo una parola del nome; None = assente.
-    Non passare qui gli URL che contengono lo slug provato, altrimenti il controllo è circolare.
+    'strong' = full name or domain; 'weak' = only one word of the name; None = not found.
+    Do not pass URLs that contain the slug being tested, or the check becomes circular.
     """
     blob = normalize_text(" ".join(t for t in texts if t))
     squeezed = blob.replace(" ", "")

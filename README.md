@@ -1,209 +1,118 @@
-# Osservatorio retribuzioni negli annunci di lavoro
+# Salary transparency in Italian job ads
 
-Dal 7 giugno 2026 il D.Lgs. 96/2026 obbliga chi pubblica un annuncio di lavoro a indicare la retribuzione iniziale o la fascia. Questo progetto raccoglie gli annunci delle principali aziende che assumono in Italia e misura quanti indicano davvero una cifra, quanti usano formule vaghe come "commisurata all'esperienza" o "secondo CCNL" e quali RAL offrono per settore, funzione, seniority e regione.
+Since 7 June 2026, Legislative Decree 96/2026 requires anyone who publishes a job ad in Italy to state the starting pay or a pay range. This project measures how well the rule is followed. It collects the ads published on the career sites of large companies hiring in Italy and counts how many give a figure, how many only use phrases like "pay commensurate with experience", and what salaries are offered by sector, function, seniority and region.
 
-A ottobre 2026 le aziende analizzate sono 216; 56 hanno annunci scaricabili, per circa 2.400 annunci in Italia. I risultati sono pubblicati in una pagina web con soli dati aggregati per settore.
+The first collection ran on 4 October 2026: 216 companies analyzed, 56 with ads collected, about 2,400 ads in Italy. The results are published on a web page with data aggregated by sector, which does not allow anyone to trace them back to single companies.
 
-## Avvio rapido
+## What the page shows
 
-Serve Python 3.11 o successivo.
+The page in `webapp/` shows the share of ads that state the pay, the median salary, and a comparison between ads published before and after the law came into force. The data can be filtered by period and sector, and downloaded as CSV (`webapp/data/aggregates.csv`).
 
-```bash
-pip install -r requirements.txt
-python -m playwright install chromium    # serve solo alla scoperta degli ATS (pagine in JavaScript)
-python -m pytest -q                      # controlla che tutto funzioni
-```
+![The page with the headline figure and the filters](docs/dashboard.png)
 
-Il database `data/jobs.db` non è nella repository. Per ricrearlo da zero:
+![Charts by sector, region, function and seniority](docs/dashboard-charts.png)
 
-```bash
-python discover_ats.py          # quale sistema di selezione usa ogni azienda (circa 2 ore la prima volta)
-python crawl_jobs.py            # scarica gli annunci (circa 1 ora)
-python export.py public         # genera i dati della pagina web
-python -m http.server -d webapp 8000    # apri http://localhost:8000
-```
+The page follows the device's light or dark theme and works on phones.
 
-## Come si aggiorna
+<p>
+  <img src="docs/dashboard-dark.png" alt="The page in dark mode" width="68%">
+  <img src="docs/dashboard-mobile.png" alt="The page on a smartphone" width="28%">
+</p>
 
-Il lavoro ricorrente è uno solo: riscaricare gli annunci. Lo fa un'attività pianificata di Windows, "Osservatorio RAL - crawl settimanale", ogni lunedì alle 7:00. Se a quell'ora il PC è spento, parte appena lo si riaccende. L'attività lancia `scripts/crawl_settimanale.ps1`, che scarica gli annunci senza cache, rigenera l'export privato e quello pubblico e scrive un log in `data/logs/`.
+## How the data is collected
 
-Comandi utili da PowerShell, nella cartella del progetto:
+The work has three steps.
 
-```powershell
-# l'attività esiste e quando parte?
-Get-ScheduledTask -TaskName "Osservatorio RAL - crawl settimanale" | Get-ScheduledTaskInfo
+1. For each company on a private list of large employers in Italy, `discover_ats.py` finds the applicant tracking system (ATS) that hosts its ads. It looks for traces of the ATS on the career page, with a headless browser for pages built in JavaScript, and tries the most likely company names on the public APIs.
+2. `crawl_jobs.py` downloads the ads, keeps those located in Italy or remote, and classifies them: ISTAT municipality of the location, function, seniority, contract type, workplace type and pay.
+3. `export.py` computes the aggregates published on the page, applying the protection rules described below.
 
-# prova senza fare richieste ai siti
-powershell -ExecutionPolicy Bypass -File scripts\crawl_settimanale.ps1 -Prova
+Only public sources are used, with no login:
 
-# lancia subito il crawl vero, senza aspettare lunedì
-Start-ScheduledTask -TaskName "Osservatorio RAL - crawl settimanale"
-
-# registra di nuovo l'attività (dopo averla cancellata o spostato la cartella)
-powershell -ExecutionPolicy Bypass -File scripts\registra_crawl_settimanale.ps1
-
-# rimuovi l'attività
-Unregister-ScheduledTask -TaskName "Osservatorio RAL - crawl settimanale" -Confirm:$false
-```
-
-Dopo ogni crawl:
-
-1. Leggi l'ultimo file in `data/logs/`. In fondo trovi il totale degli annunci e le board andate in errore.
-2. Se una board continua a dare errore per più settimane, controlla l'azienda con `python discover_ats.py --only "Nome azienda" --force`.
-3. Fai il commit dei dati pubblici aggiornati: `git add webapp/data` e poi `git commit -m "Aggiornamento dati"`.
-
-Ogni mese circa conviene rilanciare `python discover_ats.py`, per trovare aziende che hanno cambiato sistema di selezione. Il comando salta da solo quelle controllate negli ultimi 7 giorni.
-
-Quando si modificano le regole di estrazione (`lib/salary.py`, `lib/enrich.py`) non serve riscaricare nulla:
-
-```bash
-python crawl_jobs.py --reprocess    # ricalcola i campi sugli annunci già salvati
-python export.py public
-```
-
-## Come funziona
-
-Il lavoro è diviso in tre passi, ciascuno con il suo script.
-
-1. `discover_ats.py` scopre quale sistema di selezione (ATS) usa ogni azienda della lista `data/companies_seed.csv`. Cerca le tracce dell'ATS nella pagina carriere, anche con un browser vero per le pagine costruite in JavaScript, e prova i nomi più probabili sulle API pubbliche. Il risultato va nella tabella `ats_registry` e in `data/ats_registry.csv`. Le correzioni scritte a mano in `data/manual_overrides.csv` hanno sempre la precedenza.
-2. `crawl_jobs.py` scarica gli annunci delle aziende pronte, tiene quelli in Italia o da remoto e li arricchisce: sede normalizzata sull'elenco ISTAT dei comuni, funzione, seniority, tipo di contratto, modalità di lavoro e retribuzione. Tiene anche lo storico (`first_seen`, `last_seen`, `is_active`).
-3. `export.py` produce le uscite: una copia completa per le analisi in DuckDB (privata) e i dati aggregati per la pagina web (pubblici). `search.py` cerca negli annunci salvati e tiene lo storico delle ricerche.
-
-### Fonti
-
-Si usano solo endpoint e pagine pubblici, senza login.
-
-| ATS | Fonte |
+| ATS | Source |
 |---|---|
-| Greenhouse, Lever, Ashby, Workable, Recruitee | API pubbliche dei job board, documentate dal fornitore |
-| Personio | feed XML pubblico delle offerte |
-| Workday, Oracle Recruiting | endpoint JSON usato dalla pagina carriere |
-| Teamtailor | feed RSS `/jobs.rss` del sito carriere |
-| SuccessFactors | `sitemap.xml` del sito carriere e dati schema.org/JobPosting di ogni annuncio |
+| Greenhouse, Lever, Ashby, Workable, Recruitee | public job board APIs documented by the vendor |
+| Personio | XML job feed |
+| Workday, Oracle Recruiting | JSON endpoint used by the career page |
+| Teamtailor | RSS feed of the career site |
+| SuccessFactors | career site sitemap and the schema.org/JobPosting data of each ad |
 
-Alcuni ATS vengono riconosciuti ma non scaricati, e restano nel registro con `supported = 0` per misurare la copertura. SmartRecruiters è escluso perché il `robots.txt` della sua API vieta l'accesso automatico. Taleo, inRecruiting, Avature, Altamira, Phenom, Eightfold, iCIMS, Cornerstone e SuccessFactors senza sitemap non hanno un feed pubblico.
+Other ATSs have no public feed (Taleo, inRecruiting, Avature, Altamira, Phenom, Eightfold, iCIMS, Cornerstone, SuccessFactors without a sitemap), so the companies that use them are left out. SmartRecruiters has a public API, but its `robots.txt` disallows automated access, so it is not used.
 
-### Regole di raccolta
+## Collection rules
 
-Le applica `lib/http.py` a ogni richiesta, comprese quelle alle API.
+Every request goes through `lib/http.py`, which:
 
-- Rispetta il `robots.txt` di ogni host.
-- Rispetta la riserva sul text and data mining prevista dall'art. 70-quater della L. 633/1941: se un sito la dichiara con `/.well-known/tdmrep.json` o con l'header `tdm-reservation: 1`, il contenuto non viene usato.
-- Aspetta tra una richiesta e l'altra: 1 secondo sui siti aziendali, circa 0,35 secondi sulle API, con un solo ritmo per tutti i server Workday.
-- Se un servizio risponde 429 chiedendo una pausa lunga, non lo contatta più fino alla scadenza indicata. I blocchi sono salvati in `data/cache/blocked_hosts.json` e valgono anche per i run successivi.
-- Toglie email e numeri di telefono dalle descrizioni prima di salvarle.
+- follows the `robots.txt` of every site, APIs included;
+- respects text and data mining opt-outs (art. 70-quater of Italian Law 633/1941, which implements EU Directive 2019/790), declared through `/.well-known/tdmrep.json` or the `tdm-reservation` header;
+- waits 1 second between two requests to the same company site and about 0.35 seconds between two calls to the same API;
+- stops contacting a service that answers with a 429 error and asks for a long pause, until the time it gives.
 
-### Retribuzione
+The ad text stays private and is not republished. Email addresses and phone numbers in the descriptions are deleted before saving.
 
-Se l'ATS ha un campo dedicato alla retribuzione, si usa quello. Altrimenti la cifra si cerca nel testo con le regole di `lib/salary.py`. Ogni annuncio finisce in una di tre classi (`salary_transparency`): cifra, solo formula vaga, nessuna indicazione.
+## How an ad is classified
 
-Le cifre diventano RAL annua lorda in euro: le mensili si moltiplicano per 14, o per 12 negli stage. Paghe orarie o giornaliere, cifre nette e altre valute contano come "cifra" ma non vengono convertite. Un valore annuo fuori dall'intervallo 5.000-500.000 euro viene scartato, perché di solito è un altro importo (un'indennità, il fatturato dell'azienda). Le cifre vicine a parole come "ricavi", "ordini" o "mld" vengono ignorate.
+### Pay
+
+If the ATS has a dedicated pay field, that field is used. Otherwise the figure is looked for in the text with the rules in `lib/salary.py`. Each ad falls into one of three classes: it gives a figure, it only uses vague wording, or it says nothing.
+
+Figures are converted to gross annual salary in euros. In Italy annual pay is usually spread over 14 monthly payments, so monthly amounts are multiplied by 14, or by 12 for internships. Hourly or daily pay, net figures and figures in other currencies count as "states the pay" but are not part of the salary medians. An annual value below €5,000 or above €500,000 is discarded, because it is usually another amount, such as an allowance or the company's revenue.
 
 ### Seniority
 
-Il livello si legge prima dal titolo ("Senior", "Junior", "Head of"). Se il titolo non lo indica, si deduce dagli anni di esperienza richiesti nel testo: meno di 2 anni junior, da 2 a 4 intermedio, da 5 in su senior. La colonna `seniority_source` dice da dove viene il livello (`titolo`, `esperienza`, `non_indicata`). Sigle come "CFO Services" o "CEO Office" sono nomi di practice e non contano come ruoli dirigenziali.
+The level is read from the ad title ("Senior", "Junior", "Head of"). When the title does not say, it is derived from the years of experience the text asks for: under 2 years is junior, 2 to 4 is mid-level, 5 or more is senior. About one ad in three states neither the level nor the years of experience.
 
-### Periodo rispetto alla legge
+### Publication date
 
-`posting_period` vale `post_legge` per gli annunci pubblicati dal 7 giugno 2026, `pre_legge` per quelli precedenti ma pubblicati entro 12 mesi dall'osservazione e `storico` per quelli online da più tempo, che di solito sono posizioni sempre aperte. Le statistiche principali usano solo `post_legge`.
+Ads published from 7 June 2026 fall under the law and form the base of the main analysis. Those published in the previous 12 months are used only for comparison. Those online for more than a year are usually evergreen positions and are kept separate.
 
-## Pagina web e dati pubblici
+## Protecting the companies
 
-La pagina in `webapp/` è un sito statico (HTML, CSS e JavaScript, senza build). Mostra solo dati aggregati: non contiene annunci singoli, nomi, titoli o link delle aziende.
+The public page contains no single ads, and no company names, titles or links. The data is aggregated by macro-sector, and each macro-sector includes at least 3 companies. The rules are in `lib/disclosure.py`:
 
-`python export.py public` scrive in `webapp/data/`:
+- a combination (for example "Finance and insurance, Lombardia") appears only if it covers at least 5 ads from at least 3 companies;
+- no company can have more than 70% of the combination's ads, otherwise the figure would in practice describe that company;
+- salary medians follow the same thresholds;
+- if only one combination in a group is hidden, the smallest of the others is hidden too, so it cannot be worked out by subtracting from the total.
 
-- `aggregati.json`, letto dalla pagina, e `aggregati.csv`, scaricabile. Ogni riga è una combinazione di periodo, macro-settore e una dimensione (regione, funzione, seniority, contratto, modalità o periodo di pubblicazione).
-- `meta.json`, con le date della rilevazione e i conteggi citati nella metodologia.
-- `labels.json`, con i nomi leggibili dei valori.
+With the October 2026 data these rules hide about 350 of 770 combinations.
 
-Le regole che proteggono l'identità delle aziende sono in `lib/disclosure.py`. Una combinazione viene pubblicata solo se riunisce almeno 5 annunci di almeno 3 aziende e se nessuna azienda supera il 70% dei suoi annunci. Le mediane RAL seguono le stesse soglie. Quando in un gruppo una sola combinazione è nascosta, si nasconde anche la più piccola delle altre, perché non la si possa ricavare per differenza dal totale. I settori sono riuniti in 6 macro-settori da almeno 3 aziende ciascuno (`MACRO_OF_SECTOR` in `lib/labels.py`).
+## Limits
 
-I dati per azienda e per annuncio restano sul PC, in `data/jobs.db` e nell'export DuckDB, entrambi esclusi da git.
+- Collection started on 4 October 2026 and only sees the ads online from that day. Ads published before the law and still online do not represent the market of that time.
+- The publication date means slightly different things across ATSs: sometimes it is the first publication, sometimes a repost or the latest update.
+- The results describe the 56 companies with ads collected, not the whole Italian job market. Companies whose ATS has no public source are excluded.
+- Pay and seniority are extracted with automatic rules. Their accuracy is measured on a sample of ads checked by hand with `validate_salary.py`.
 
-La cartella `webapp/` si può pubblicare così com'è su GitHub Pages o Cloudflare Pages. Prima di farlo vanno completati la validazione della retribuzione, la revisione delle condizioni d'uso dei siti usati e una verifica legale.
+## How it was built
 
-## Validazione
+I built the project with the help of Claude Code, Anthropic's coding assistant. The method, the sources and the choices about publishing the data are mine, and I checked the results by hand. `prompt_claude_code.md` is the brief I started from, translated into English.
 
-L'estrazione della retribuzione va misurata a mano prima di pubblicare i risultati.
-
-```bash
-python validate_salary.py sample                       # campione di circa 175 annunci da etichettare
-python validate_salary.py sample --exclude <csv già fatti>
-python validate_salary.py refresh <csv>                # aggiorna le righe non ancora giudicate
-python validate_salary.py score <csv>                  # precisione e recall
-```
-
-Nel CSV, la colonna `giudizio` accetta `ok`, `errato`, `parziale`, `mancata` e `nessuna`. I file stanno in `data/validation/` e restano privati, perché contengono frasi degli annunci.
-
-## Riferimento comandi
-
-```bash
-# scoperta degli ATS
-python discover_ats.py --only "companyc,companyb" --force   # alcune aziende, anche se controllate da poco
-python discover_ats.py --retry-none                     # riprova le aziende senza ATS trovato
-python discover_ats.py --workday-only                   # solo la ricerca dei tenant Workday
-python discover_ats.py --no-browser                     # senza Playwright, più veloce
-python discover_ats.py --report                         # report di copertura
-
-# annunci
-python crawl_jobs.py --only "companyb,examplecorp"
-python crawl_jobs.py --reprocess
-
-# ricerca ed export
-python search.py "data analyst" --location milano --periodo post_legge
-python export.py duckdb                                 # data/export/osservatorio.duckdb, privato
-python export.py public                                 # webapp/data/, pubblico
-python export.py bigquery --project mio-progetto        # facoltativo, ricarica completa
-```
-
-L'opzione `--cache` di `discover_ats.py` e `crawl_jobs.py` conserva le risposte per 7 giorni in `data/cache/`. Serve durante lo sviluppo: per i dati veri il crawl settimanale non la usa. BigQuery è facoltativo; nella sandbox gratuita le tabelle scadono dopo 60 giorni, quindi il dato di riferimento resta `data/jobs.db`.
-
-## Struttura
+## Structure
 
 ```
-discover_ats.py          scoperta degli ATS
-crawl_jobs.py            download e normalizzazione degli annunci
-search.py                ricerche e storico
-export.py                export DuckDB, dati pubblici, BigQuery
-validate_salary.py       validazione manuale della retribuzione
-test_ats.py              prova veloce di un singolo ATS
-lib/http.py              richieste HTTP con robots.txt, riserva TDM, pause, retry, cache
-lib/browser.py           browser Playwright per le pagine in JavaScript
-lib/ats_fetchers.py      download degli annunci per ogni ATS
-lib/ats_fingerprints.py  tracce degli ATS nelle pagine
-lib/slugs.py             nomi candidati per le board, verifica del nome azienda
-lib/locations.py         sedi e comuni ISTAT
-lib/enrich.py            funzione, seniority, contratto, modalità, lingua, retribuzione, privacy
-lib/salary.py            estrazione della retribuzione dal testo
-lib/labels.py            etichette e macro-settori
-lib/disclosure.py        regole di protezione dei dati pubblici
-lib/db.py                connessione al database e schema
-sql/schema.sql           tabelle, con tipi compatibili BigQuery
-sql/views.sql            viste
-sql/aggregates.sql       statistiche per l'export DuckDB
-scripts/                 crawl settimanale e registrazione dell'attività pianificata
-webapp/                  pagina web e dati pubblici
-data/                    lista aziende, correzioni, registro, dati ISTAT
-tests/                   test
+discover_ats.py          finds the applicant tracking system of each company
+crawl_jobs.py            downloads and classifies the job ads
+export.py                public aggregates and DuckDB or BigQuery export
+search.py                search in the stored ads
+validate_salary.py       manual check of the pay extraction
+lib/                     HTTP requests, ATSs, locations, classification, protection rules
+sql/                     database schema and views
+scripts/                 scheduled update on Windows
+webapp/                  web page and aggregate data
+data/reference/          ISTAT list of Italian municipalities and population
+tests/                   tests
 ```
 
-## Limiti
+The company list, the ATS registry and the database of ads stay private and are not in this repository.
 
-- L'osservazione è iniziata il 4 ottobre 2026 e vede solo gli annunci online da quel giorno. Gli annunci pre-legge ancora visibili non sono un campione del mercato prima della legge.
-- La data di pubblicazione ha significati un po' diversi tra gli ATS: prima pubblicazione, ripubblicazione o, per alcune board Greenhouse, ultimo aggiornamento.
-- Le aziende con annunci scaricabili sono 56 su 216. Chi usa un ATS senza fonte pubblica è escluso, quindi i risultati descrivono queste aziende e non l'intero mercato del lavoro.
-- La retribuzione e la seniority si ricavano con regole automatiche. La loro precisione va misurata con `validate_salary.py`.
+## Reference data sources
 
-## Note sui dati
+- ISTAT, list of Italian municipalities, CC BY 4.0 license (`data/reference/comuni_istat.csv`)
+- comuni-json by Matteo Contrini, MIT license, for municipality population (`data/reference/comuni_popolazione.json`)
 
-- `website_verified = 0` nella lista aziende segnala un sito da verificare.
-- `company_type` e `source` (FTSE MIB, Mid Cap e altri) riflettono la composizione degli indici al momento della creazione della lista. Gli indici cambiano: controllali prima di usarli in un'analisi.
-- `size_band` è una stima dei dipendenti nel mondo: S sotto 250, M 250-1.000, L 1.000-10.000, XL oltre 10.000.
+## License
 
-## Fonti dei dati di riferimento
+The code is released under the MIT license (`LICENSE` file). The aggregate data in `webapp/data/` is released under the Creative Commons Attribution 4.0 International license (CC BY 4.0): you can reuse it with attribution. The reference data in `data/reference/` keeps the original licenses listed above.
 
-- ISTAT, Elenco dei comuni italiani, licenza CC BY 4.0: `data/reference/comuni_istat.csv`
-- comuni-json di Matteo Contrini, licenza MIT, dati ISTAT, per la popolazione: `data/reference/comuni_popolazione.json`
-
-Questo README non è un parere legale.
+This README is not legal advice.

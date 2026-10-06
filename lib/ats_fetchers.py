@@ -1,11 +1,11 @@
 """
-Download degli annunci dalle API pubbliche degli ATS (Greenhouse, Lever, Ashby, Workday).
+Downloading job ads from the public ATS endpoints (Greenhouse, Lever, Ashby, Workday, ...).
 
-Logica spostata da test_ats.py. In più:
-- ogni annuncio ha `job_id` (serve per deduplicare) e qualche campo utile ai filtri
-  (reparto, tipo contratto, modalità di lavoro, paese, data di pubblicazione);
-- tutte le chiamate passano da lib/http.py (rate limit, retry, cache);
-- ogni funzione restituisce (jobs, meta): meta dice su quale istanza (us/eu) sta la board.
+One download function per ATS. For each function:
+- every job ad has a `job_id` (used for deduplication) and some fields useful for the filters
+  (department, contract type, workplace type, country, publication date);
+- every call goes through lib/http.py (rate limit, retries, cache);
+- the function returns (jobs, meta): meta says which instance (us/eu) hosts the board.
 """
 
 import html
@@ -19,7 +19,7 @@ from lib import http
 from lib.locations import is_italy
 from lib.text import clean_html
 
-# Chiavi presenti in ogni annuncio normalizzato (None se l'ATS non le fornisce)
+# Keys present in every normalized job ad (None if the ATS does not provide them)
 JOB_FIELDS = [
     "ats", "company", "job_id", "title", "location", "locations_all", "country",
     "department", "employment_type", "workplace_type", "posted_at", "url",
@@ -34,7 +34,7 @@ def _job(**fields) -> dict:
 
 
 def _first_instance(urls_by_instance: dict):
-    """Prova più istanze (USA, poi EU) e restituisce (istanza, json) della prima che risponde."""
+    """Tries several instances (US, then EU) and returns (instance, json) of the first that answers."""
     last_err = None
     for instance, url in urls_by_instance.items():
         try:
@@ -45,18 +45,18 @@ def _first_instance(urls_by_instance: dict):
 
 
 # ---------- Greenhouse ----------
-# Nota: l'API principale risponde anche per molte board EU; boards.eu.greenhouse.io è il fallback
-# (boards-api.eu.greenhouse.io, usato in test_ats.py, non esiste: errore DNS)
+# Note: the main API also answers for many EU boards; boards.eu.greenhouse.io is the fallback
+# (boards-api.eu.greenhouse.io does not exist: DNS error)
 GREENHOUSE_HOSTS = {"us": "https://boards-api.greenhouse.io",
                     "eu": "https://boards.eu.greenhouse.io"}
 
 
 def fetch_greenhouse(slug: str, instance: str = None):
-    # Molte aziende europee stanno sull'istanza EU di Greenhouse (job-boards.eu.greenhouse.io)
+    # Many European companies are on Greenhouse's EU instance (job-boards.eu.greenhouse.io)
     hosts = {instance: GREENHOUSE_HOSTS[instance]} if instance in GREENHOUSE_HOSTS else GREENHOUSE_HOSTS
-    # 1) dati della board (leggeri): dicono se esiste, su quale istanza, e il nome dell'azienda
+    # 1) board data (light): whether it exists, on which instance, and the company name
     inst, board = _first_instance({i: f"{h}/v1/boards/{slug}" for i, h in hosts.items()})
-    # 2) annunci con descrizione completa
+    # 2) job ads with the full description
     data = http.get_json(f"{GREENHOUSE_HOSTS[inst]}/v1/boards/{slug}/jobs?content=true")
 
     jobs = []
@@ -74,7 +74,7 @@ def fetch_greenhouse(slug: str, instance: str = None):
             posted_at=j.get("first_published") or j.get("updated_at"),
             url=j.get("absolute_url"),
             description=clean_html(j.get("content", "")),
-            salary_structured=None,  # Greenhouse non la espone nel job board pubblico
+            salary_structured=None,  # Greenhouse does not expose it on the public job board
         ))
     return jobs, {"instance": inst, "board_name": board.get("name")}
 
@@ -90,11 +90,11 @@ def _ms_to_iso(ms):
 
 
 def fetch_lever(slug: str, instance: str = None):
-    # Le aziende europee spesso stanno sull'istanza EU di Lever (jobs.eu.lever.co)
+    # European companies are often on Lever's EU instance (jobs.eu.lever.co)
     hosts = {instance: LEVER_HOSTS[instance]} if instance in LEVER_HOSTS else LEVER_HOSTS
     inst, data = _first_instance({i: f"{h}/v0/postings/{slug}?mode=json" for i, h in hosts.items()})
     if not isinstance(data, list):
-        raise ValueError(f"risposta Lever inattesa per {slug}")
+        raise ValueError(f"unexpected Lever response for {slug}")
 
     jobs = []
     for j in data:
@@ -118,7 +118,7 @@ def fetch_lever(slug: str, instance: str = None):
             posted_at=_ms_to_iso(j.get("createdAt")),
             url=j.get("hostedUrl"),
             description=re.sub(r"\s+", " ", " ".join(p for p in parts if p)).strip(),
-            salary_structured=j.get("salaryRange"),  # {min, max, currency, interval} se presente
+            salary_structured=j.get("salaryRange"),  # {min, max, currency, interval} if present
         ))
     return jobs, {"instance": inst, "board_name": None}
 
@@ -129,7 +129,7 @@ def fetch_ashby(slug: str, instance: str = None):
         f"https://api.ashbyhq.com/posting-api/job-board/{slug}?includeCompensation=true"
     )
     if "jobs" not in data:
-        raise ValueError(f"board Ashby {slug} non trovata")
+        raise ValueError(f"Ashby board {slug} not found")
 
     jobs = []
     for j in data.get("jobs", []):
@@ -162,22 +162,22 @@ NOT_WORKDAY_SITES = {"wday", "job", "jobs", "details", "login", "apply"}
 
 
 def parse_workday_url(url: str) -> tuple[str, str, str | None]:
-    """Da un URL Workday ricava (host, tenant, site). Site può essere None.
+    """Gets (host, tenant, site) from a Workday URL. Site can be None.
 
-    https://tenant.wd3.myworkdayjobs.com/en-US/CompanyCareers -> (host, 'tenant', 'CompanyCareers')
+    https://acme.wd103.myworkdayjobs.com/it-IT/AcmeCareers            -> (host, 'acme', 'AcmeCareers')
     https://x.wd3.myworkdayjobs.com/wday/cxs/x/Ext/jobs               -> (host, 'x', 'Ext')
-    https://wd3.myworkdaysite.com/en-US/recruiting/tenanth/GroupSite    -> (host, 'tenanth', 'GroupSite')
+    https://wd3.myworkdaysite.com/en-US/recruiting/acme/GroupSite     -> (host, 'acme', 'GroupSite')
     """
     if not url.startswith("http"):
         url = "https://" + url
     p = urlparse(url)
-    host = p.netloc                      # es. tenantg.wd3.myworkdayjobs.com
-    tenant = host.split(".")[0]          # es. tenantg
+    host = p.netloc                      # e.g. acme.wd3.myworkdayjobs.com
+    tenant = host.split(".")[0]          # e.g. acme
     segments = [s for s in p.path.split("/") if s]
     if len(segments) >= 4 and segments[:2] == ["wday", "cxs"]:
         return host, segments[2], segments[3]
-    segments = [s for s in segments if not LOCALE_RE.match(s)]   # toglie "it-IT", "en-US"...
-    # Variante myworkdaysite.com: il tenant sta nel percorso, dopo "recruiting"
+    segments = [s for s in segments if not LOCALE_RE.match(s)]   # drops "it-IT", "en-US"...
+    # myworkdaysite.com variant: the tenant is in the path, after "recruiting"
     if host.endswith("myworkdaysite.com"):
         if len(segments) >= 2 and segments[0] == "recruiting":
             return host, segments[1], segments[2] if len(segments) >= 3 else None
@@ -189,17 +189,17 @@ def parse_workday_url(url: str) -> tuple[str, str, str | None]:
 
 
 def workday_board_url(host: str, tenant: str, site: str) -> str:
-    """URL pubblico della pagina carriere (forma canonica salvata nel registro)."""
+    """Public career page URL (canonical form stored in the registry)."""
     if host.endswith("myworkdaysite.com"):
         return f"https://{host}/recruiting/{tenant}/{site}"
     return f"https://{host}/{site}"
 
 
 def workday_sites_from_robots(host: str, retries: int = 3) -> list[str]:
-    """Nomi dei siti carriere del tenant, letti dalle righe Sitemap del robots.txt di Workday.
+    """The tenant's career site names, read from the Sitemap lines of Workday's robots.txt.
 
-    Tenant esistente: 200 con "Sitemap: https://{host}/{Sito}/siteMap.xml".
-    Tenant inesistente: 422. Costa una sola richiesta, quindi è anche il modo più veloce di fare probing.
+    Existing tenant: 200 with "Sitemap: https://{host}/{Site}/siteMap.xml".
+    Missing tenant: 422. It costs a single request, so it is also the fastest way to probe.
     """
     r = http.request("GET", f"https://{host}/robots.txt", retries=retries)
     if r.status_code != 200:
@@ -209,10 +209,10 @@ def workday_sites_from_robots(host: str, retries: int = 3) -> list[str]:
 
 
 def best_workday_site(host: str, sites: list[str]) -> str:
-    """Tra più siti dello stesso tenant sceglie quello con più annunci in Italia (poi più annunci totali).
+    """Among several sites of the same tenant, picks the one with the most ads in Italy (then the most ads).
 
-    Es. example: il primo sito elencato è 'UK_TemporaryWorkersite', quello giusto è
-    'example_Experienced_Professionals'. Costa una richiesta leggera per sito.
+    E.g. the first site listed is for UK temporary workers, the right one is the one for
+    experienced professionals. It costs one light request per site.
     """
     tenant = host.split(".")[0]
     best, best_score = sites[0], (-1, -1)
@@ -223,7 +223,7 @@ def best_workday_site(host: str, sites: list[str]) -> str:
         except (requests.RequestException, ValueError):
             continue
         italy = workday_italy_count(data.get("facets"))
-        if italy is None:   # niente filtro paese: contiamo le sedi della prima pagina
+        if italy is None:   # no country filter: count the locations on the first page
             italy = sum(is_italy(jp.get("locationsText")) for jp in data.get("jobPostings", []))
         score = (italy, data.get("total", 0))
         if score > best_score:
@@ -232,9 +232,9 @@ def best_workday_site(host: str, sites: list[str]) -> str:
 
 
 def discover_workday_site(host: str, retries: int = 3) -> str | None:
-    """Trova il nome del sito Workday: prima da robots.txt, poi dal redirect della home.
+    """Finds the Workday site name: first from robots.txt, then from the home page redirect.
 
-    (Da ottobre 2026 la home risponde 406 ai client non-browser, quindi il redirect spesso non basta.)
+    (Since October 2026 the home page answers 406 to non-browser clients, so the redirect often fails.)
     """
     sites = workday_sites_from_robots(host, retries)
     if len(sites) == 1:
@@ -252,19 +252,19 @@ def discover_workday_site(host: str, retries: int = 3) -> str | None:
 def _workday_base(career_url: str):
     host, tenant, site = parse_workday_url(career_url)
     if not tenant:
-        raise ValueError(f"URL Workday non riconosciuto: {career_url}")
+        raise ValueError(f"unrecognized Workday URL: {career_url}")
     if not site:
         site = discover_workday_site(host)
         if not site:
             raise ValueError(
-                "nome del sito Workday non trovato: copia dal browser l'URL completo "
-                f"della pagina carriere (es. https://{host}/it-IT/<NomeSito>)"
+                "Workday site name not found: copy the full career page URL "
+                f"from the browser (e.g. https://{host}/it-IT/<SiteName>)"
             )
     return host, tenant, site, f"https://{host}/wday/cxs/{tenant}/{site}"
 
 
 def workday_italy_count(facets: list):
-    """Cerca nei filtri (facets) di Workday la voce 'Italy'/'Italia' e restituisce il conteggio."""
+    """Looks for 'Italy'/'Italia' in Workday's filters (facets) and returns its count."""
     counts = []
 
     def walk(nodes):
@@ -279,9 +279,9 @@ def workday_italy_count(facets: list):
 
 
 def workday_italy_facet(facets: list):
-    """Filtro Workday per l'Italia, da passare come appliedFacets: {"locationCountry": ["<id>"]}.
+    """Workday filter for Italy, to pass as appliedFacets: {"locationCountry": ["<id>"]}.
 
-    None se il sito non ha un filtro per paese (allora si filtra sul testo della sede).
+    None if the site has no country filter (then the location text is filtered instead).
     """
     found = []
 
@@ -301,9 +301,9 @@ def workday_italy_facet(facets: list):
 
 
 def workday_summary(career_url: str, n_details: int = 2) -> dict:
-    """Prima pagina della board Workday: totale annunci, annunci in Italia, qualche testo.
+    """First page of the Workday board: total ads, ads in Italy, a few texts.
 
-    Usata nella scoperta: costa 1 + n_details richieste invece di scaricare tutto.
+    Used during discovery: it costs 1 + n_details requests instead of downloading everything.
     """
     host, tenant, site, base = _workday_base(career_url)
     data = http.post_json(f"{base}/jobs",
@@ -320,8 +320,8 @@ def workday_summary(career_url: str, n_details: int = 2) -> dict:
     italy = workday_italy_count(data.get("facets"))
     italy_estimated = False
     if italy is None and total:
-        # Nessun filtro "paese" (es. examplebank): contiamo le sedi italiane nell'elenco,
-        # al massimo 10 pagine (200 annunci). Oltre, stima in proporzione.
+        # No "country" filter: count the Italian locations in the list,
+        # at most 10 pages (200 ads). Beyond that, estimate proportionally.
         locations = [jp.get("locationsText") for jp in postings]
         offset = 20
         while offset < min(total, 200):
@@ -348,8 +348,8 @@ def workday_summary(career_url: str, n_details: int = 2) -> dict:
 
 def fetch_workday(career_url: str, max_jobs: int = None, location_regex: str = None,
                   search: str = "", italy_only: bool = False):
-    """italy_only=True: usa il filtro paese di Workday se c'è, altrimenti tiene le sedi italiane
-    e quelle multiple ("3 Locations"), da verificare nel dettaglio."""
+    """italy_only=True: uses Workday's country filter if present, otherwise keeps Italian locations
+    and multiple ones ("3 Locations"), to be checked in the detail."""
     host, tenant, site, base = _workday_base(career_url)
     loc_re = re.compile(location_regex, re.IGNORECASE) if location_regex else None
     facets = {}
@@ -360,7 +360,7 @@ def fetch_workday(career_url: str, max_jobs: int = None, location_regex: str = N
             multi = re.compile(r"^\d+ (?:locations|sedi|località)$", re.IGNORECASE)
             keep = lambda text: is_italy(text) or bool(multi.match(text or ""))
 
-    # 1) Elenco annunci, paginato (Workday restituisce massimo 20 risultati per chiamata)
+    # 1) Job list, paginated (Workday returns at most 20 results per call)
     postings, offset, total = [], 0, None
     while max_jobs is None or len(postings) < max_jobs:
         data = http.post_json(f"{base}/jobs", {"appliedFacets": facets, "limit": 20,
@@ -383,7 +383,7 @@ def fetch_workday(career_url: str, max_jobs: int = None, location_regex: str = N
     if max_jobs is not None:
         postings = postings[:max_jobs]
 
-    # 2) Dettaglio di ogni annuncio (serve una chiamata per avere la descrizione completa)
+    # 2) Detail of each ad (one call is needed to get the full description)
     jobs = []
     for jp in postings:
         path = jp.get("externalPath")
@@ -407,14 +407,14 @@ def fetch_workday(career_url: str, max_jobs: int = None, location_regex: str = N
             posted_at=info.get("startDate"),
             url=info.get("externalUrl") or workday_board_url(host, tenant, site) + path,
             description=clean_html(info.get("jobDescription", "")),
-            salary_structured=None,   # Workday non espone uno stipendio strutturato standard
+            salary_structured=None,   # Workday exposes no standard structured salary
         ))
     return jobs, {"instance": None, "board_name": None, "total": total,
                   "url": workday_board_url(host, tenant, site)}
 
 
 # ---------- Workable ----------
-# API "widget" pubblica e documentata da Workable; robots.txt di apply.workable.com permette tutto.
+# Public "widget" API documented by Workable; the robots.txt of apply.workable.com allows everything.
 def fetch_workable(slug: str, instance: str = None):
     data = http.get_json(f"https://apply.workable.com/api/v1/widget/accounts/{slug}?details=true",
                          check_robots=True)
@@ -437,13 +437,13 @@ def fetch_workable(slug: str, instance: str = None):
             posted_at=j.get("published_on") or j.get("created_at"),
             url=j.get("url") or j.get("shortlink"),
             description=clean_html(j.get("description", "")),
-            salary_structured=None,   # il widget pubblico non espone la retribuzione
+            salary_structured=None,   # the public widget does not expose pay
         ))
     return jobs, {"instance": None, "board_name": data.get("name")}
 
 
 # ---------- Personio ----------
-# Feed XML pubblico e documentato da Personio per l'integrazione delle offerte; robots.txt: Allow /
+# Public XML feed documented by Personio for job integrations; robots.txt: Allow /
 PERSONIO_DOMAINS = ["jobs.personio.de", "jobs.personio.com"]
 
 
@@ -453,7 +453,7 @@ def fetch_personio(slug: str, instance: str = None):
     last_err = None
     for domain in PERSONIO_DOMAINS:
         base = f"https://{slug}.{domain}"
-        # niente redirect: uno slug inesistente rimanda al sito commerciale personio.com
+        # no redirects: a missing slug redirects to the personio.com marketing site
         r = http.request("GET", f"{base}/xml", check_robots=True, allow_redirects=False)
         if r.status_code == 200 and "<workzag-jobs" in r.text:
             break
@@ -488,7 +488,7 @@ def fetch_personio(slug: str, instance: str = None):
 
 
 # ---------- Recruitee ----------
-# API pubblica delle offerte (Careers Site API, documentata da Recruitee); robots.txt: Allow /
+# Public job API (Careers Site API, documented by Recruitee); robots.txt: Allow /
 def fetch_recruitee(slug: str, instance: str = None):
     data = http.get_json(f"https://{slug}.recruitee.com/api/offers/", check_robots=True)
     jobs = []
@@ -519,8 +519,8 @@ def fetch_recruitee(slug: str, instance: str = None):
 
 
 # ---------- Oracle Recruiting Cloud ----------
-# Endpoint JSON pubblico usato dalla pagina carriere "CandidateExperience" (nessun login),
-# dello stesso tipo dell'endpoint Workday. robots.txt e riserva TDM controllati da http.get_json.
+# Public JSON endpoint used by the "CandidateExperience" career page (no login),
+# similar to the Workday endpoint. robots.txt and the TDM reservation are checked by http.get_json.
 ORACLE_SITE_RE = re.compile(r"/sites/([\w-]+)")
 ORACLE_DEFAULT_SITES = ["CX_1", "CX", "CX_2"]
 ORACLE_PAGE = 25
@@ -548,7 +548,7 @@ def _oracle_page(host: str, site: str, offset: int) -> dict:
 
 
 def _oracle_site(url: str) -> tuple[str, str]:
-    """Host e numero del sito; se l'URL non lo dice, prova i nomi standard (CX_1, CX, CX_2)."""
+    """Host and site number; if the URL does not say, tries the standard names (CX_1, CX, CX_2)."""
     host, site = parse_oracle_url(url)
     for candidate in [site] if site else ORACLE_DEFAULT_SITES:
         try:
@@ -557,7 +557,7 @@ def _oracle_site(url: str) -> tuple[str, str]:
             continue
         if "requisitionList" in page:
             return host, candidate
-    raise ValueError(f"sito Oracle non trovato su {host}")
+    raise ValueError(f"Oracle site not found on {host}")
 
 
 def _oracle_is_italy(req: dict) -> bool:
@@ -567,7 +567,7 @@ def _oracle_is_italy(req: dict) -> bool:
 
 
 def oracle_summary(url: str, max_pages: int = 8) -> dict:
-    """Totale annunci e annunci in Italia (esatti fino a max_pages*25 annunci, poi stimati)."""
+    """Total ads and ads in Italy (exact up to max_pages*25 ads, estimated beyond)."""
     host, site = _oracle_site(url)
     first = _oracle_page(host, site, 0)
     total = first.get("TotalJobsCount") or 0
@@ -594,13 +594,13 @@ def fetch_oracle(url: str, instance: str = None, details: bool = True, italy_onl
             break
         reqs += batch
         offset += ORACLE_PAGE
-    if italy_only:   # il dettaglio costa una richiesta: solo per gli annunci italiani
+    if italy_only:   # the detail costs one request: only for Italian ads
         reqs = [r for r in reqs if _oracle_is_italy(r)]
 
     jobs = []
     for r in reqs:
         description = ""
-        if details:   # una richiesta per annuncio: serve solo nel crawler (Fase 2)
+        if details:   # one request per ad: only needed by the crawler (Phase 2)
             try:
                 d = http.get_json(
                     f"https://{host}/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails"
@@ -632,9 +632,9 @@ def fetch_oracle(url: str, instance: str = None, details: bool = True, italy_onl
 
 
 # ---------- Teamtailor ----------
-# Feed RSS pubblico del sito carriere (/jobs.rss), anche su dominio proprio dell'azienda.
+# Public RSS feed of the career site (/jobs.rss), also on the company's own domain.
 def teamtailor_root(slug_or_url: str) -> str:
-    """'companyu' -> https://companyu.teamtailor.com ; 'https://jobs.companyk.it/x' -> https://jobs.companyk.it"""
+    """'acme' -> https://acme.teamtailor.com ; 'https://jobs.acme.it/x' -> https://jobs.acme.it"""
     if "." in slug_or_url or slug_or_url.startswith("http"):
         url = slug_or_url if slug_or_url.startswith("http") else "https://" + slug_or_url
         p = urlparse(url)
@@ -650,9 +650,9 @@ def fetch_teamtailor(slug_or_url: str, instance: str = None):
     r = http.request("GET", f"{root_url}/jobs.rss", check_robots=True)
     r.raise_for_status()
     if "<rss" not in r.text[:500]:
-        raise ValueError(f"feed Teamtailor non trovato su {root_url}")
+        raise ValueError(f"Teamtailor feed not found on {root_url}")
 
-    local = lambda tag: tag.rsplit("}", 1)[-1]   # toglie il namespace (tt:city -> city)
+    local = lambda tag: tag.rsplit("}", 1)[-1]   # drops the namespace (tt:city -> city)
     jobs = []
     for item in ET.fromstring(r.content).iter("item"):
         fields, places, countries = {}, [], []
@@ -690,10 +690,10 @@ def fetch_teamtailor(slug_or_url: str, instance: str = None):
     return jobs, {"instance": None, "board_name": None, "url": root_url}
 
 
-# ---------- SuccessFactors (siti carriere "Recruiting Marketing") ----------
-# Niente API pubblica, ma il sito carriere pubblica sitemap.xml con tutti gli annunci e, in ogni
-# annuncio, i dati strutturati schema.org/JobPosting (pensati per i motori di ricerca).
-# Si leggono solo pagine permesse da robots.txt e senza riserva TDM, una richiesta alla volta.
+# ---------- SuccessFactors ("Recruiting Marketing" career sites) ----------
+# No public API, but the career site publishes a sitemap.xml with every ad and, in each ad,
+# schema.org/JobPosting structured data (meant for search engines).
+# Only pages allowed by robots.txt and without a TDM reservation are read, one request at a time.
 SF_JOB_URL_RE = re.compile(r"<loc>\s*([^<\s]*/job/[^<\s]*)\s*</loc>")
 SF_SUBSITEMAP_RE = re.compile(r"<sitemap>\s*<loc>\s*([^<\s]+)\s*</loc>")
 SF_SKIP_RE = re.compile(r"talent-?community|candidatura-spontanea|spontaneous", re.IGNORECASE)
@@ -705,7 +705,7 @@ def sf_root(url: str) -> str:
 
 
 def sf_job_urls(site_url: str) -> list[str]:
-    """URL di tutti gli annunci dalla sitemap del sito carriere (segue le sitemap annidate)."""
+    """URLs of every ad from the career site sitemap (follows nested sitemaps)."""
     root = sf_root(site_url)
     queue, seen, urls = [f"{root}/sitemap.xml"], set(), []
     while queue and len(seen) < 10:
@@ -723,7 +723,7 @@ def sf_job_urls(site_url: str) -> list[str]:
 
 
 def parse_sf_job_page(page: str, url: str = "") -> dict:
-    """Legge i dati schema.org/JobPosting (microdata) di una pagina annuncio SuccessFactors."""
+    """Reads the schema.org/JobPosting data (microdata) of a SuccessFactors job page."""
     def meta(prop):
         m = re.search(rf'<meta\s+itemprop="{prop}"\s+content="([^"]*)"', page)
         return html.unescape(m.group(1)).strip() or None if m else None
@@ -739,7 +739,7 @@ def parse_sf_job_page(page: str, url: str = "") -> dict:
     city, region, country = meta("addressLocality"), meta("addressRegion"), meta("addressCountry")
     location = ", ".join(x for x in (city, region, country) if x) or None
     if not location and "/job/" in url:
-        # alcuni siti riempiono la sede via JavaScript: la ricaviamo dall'URL (/job/Lombardia-...-Mantova/123/)
+        # some sites fill the location via JavaScript: take it from the URL (/job/Lombardia-...-Mantova/123/)
         slug = unquote(url.split("/job/", 1)[1].split("/")[0])
         location = re.sub(r"[-_]+", " ", slug)
     return {
@@ -754,11 +754,11 @@ def parse_sf_job_page(page: str, url: str = "") -> dict:
 
 
 def successfactors_summary(site_url: str, sample: int = 8) -> dict:
-    """Totale annunci (dalla sitemap) e stima di quelli in Italia leggendo un campione di pagine."""
+    """Total ads (from the sitemap) and an estimate of those in Italy from a sample of pages."""
     urls = sf_job_urls(site_url)
     if not urls:
-        raise ValueError(f"nessun annuncio nella sitemap di {sf_root(site_url)}")
-    picked = urls[:: max(1, len(urls) // sample)][:sample]   # campione distribuito su tutta la lista
+        raise ValueError(f"no job ads in the sitemap of {sf_root(site_url)}")
+    picked = urls[:: max(1, len(urls) // sample)][:sample]   # sample spread across the whole list
     pages = []
     for u in picked:
         try:
@@ -779,8 +779,8 @@ def fetch_successfactors(site_url: str, instance: str = None, max_jobs: int = No
                          italy_only: bool = False):
     urls = sf_job_urls(site_url)
     if italy_only:
-        # la sede è quasi sempre nell'URL (/job/Milano-Data-Analyst/123/): scarichiamo solo quelle italiane.
-        # Se nessun URL contiene una sede riconoscibile, si scaricano tutte (fino a max_jobs) e si filtra dopo.
+        # the location is almost always in the URL (/job/Milano-Data-Analyst/123/): download only Italian ones.
+        # If no URL contains a recognizable location, download all of them (up to max_jobs) and filter later.
         italian = [u for u in urls if is_italy(unquote(u.split("/job/", 1)[-1]).replace("-", " "))]
         urls = italian or urls
     jobs = []
@@ -813,15 +813,15 @@ FETCHERS = {
     "recruitee": fetch_recruitee,
 }
 
-# ATS rilevati ma NON scaricabili senza violare termini o robots.txt (non aggiungerli al crawler):
+# ATSs detected but NOT downloadable without breaking terms or robots.txt (do not add them to the crawler):
 # - smartrecruiters: api.smartrecruiters.com/robots.txt -> "User-agent: * Disallow: /"
-# - successfactors, avature, oracle, taleo, icims, inrecruiting, altamira, phenom, eightfold:
-#   nessuna API pubblica; servirebbe fare scraping delle pagine carriere
-# - teamtailor: l'API ufficiale richiede una chiave dell'azienda
+# - avature, taleo, icims, inrecruiting, altamira, phenom, eightfold, cornerstone: no public feed;
+#   it would mean scraping the career pages
+# - teamtailor: the official API needs a company key, so only the public RSS feed is used
 
 
 def count_italy(jobs: list) -> int:
-    """Annunci con almeno una sede in Italia."""
+    """Job ads with at least one location in Italy."""
     n = 0
     for j in jobs:
         places = [j["location"]] + list(j["locations_all"] or [])

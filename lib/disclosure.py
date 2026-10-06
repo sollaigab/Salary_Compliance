@@ -1,17 +1,17 @@
 """
-Protezione dell'identità delle aziende nei dati pubblici (controllo della divulgazione statistica).
+Protecting company identities in the public data (statistical disclosure control).
 
-I dati pubblici contengono SOLO celle aggregate (periodo x macro-settore x una dimensione).
-Una cella si pubblica se rispetta tutte queste regole:
+The public data contains ONLY aggregate cells (period x macro-sector x one dimension).
+A cell is published if it passes all of these rules:
 
-1. soglia minima:   almeno MIN_JOBS annunci e MIN_COMPANIES aziende diverse;
-2. dominanza:       nessuna azienda supera MAX_SHARE degli annunci della cella
-                    (altrimenti il dato della cella è, di fatto, quello di un'azienda);
-3. mediane RAL:     solo se le cifre vengono da almeno MIN_JOBS annunci e MIN_COMPANIES aziende,
-                    senza un'azienda oltre MAX_SHARE;
-4. secondaria:      se in un gruppo (stesso periodo, macro-settore e dimensione) una sola cella
-                    è nascosta, si nasconde anche la più piccola delle visibili: altrimenti la cella
-                    nascosta si ricaverebbe per differenza dal totale.
+1. threshold:       at least MIN_JOBS job ads and MIN_COMPANIES distinct companies;
+2. dominance:       no company holds more than MAX_SHARE of the cell's ads
+                    (otherwise the cell would in practice describe one company);
+3. salary medians:  only if the figures come from at least MIN_JOBS ads and MIN_COMPANIES companies,
+                    with no company above MAX_SHARE;
+4. secondary:       if exactly one cell in a group (same period, macro-sector and dimension) is
+                    hidden, the smallest visible one is hidden too: otherwise the hidden cell could
+                    be worked out by subtracting from the total.
 """
 
 MIN_JOBS = 5
@@ -24,18 +24,18 @@ def cell_ok(n_jobs: int, n_companies: int, top_share: float) -> bool:
 
 
 def apply_rules(cells: list[dict]) -> list[dict]:
-    """Restituisce solo le celle pubblicabili. Ogni cella ha le chiavi:
+    """Returns only the publishable cells. Each cell has the keys:
     period, macro, dim, value, n_jobs, n_companies, top_share,
-    n_ral, n_ral_companies, ral_top_share, ral_min_median, ral_max_median (+ altre metriche)."""
+    n_ral, n_ral_companies, ral_top_share, ral_min_median, ral_max_median (+ other metrics)."""
     for c in cells:
         c["_hidden"] = not cell_ok(c["n_jobs"], c["n_companies"], c["top_share"])
         if not cell_ok(c["n_ral"], c["n_ral_companies"], c["ral_top_share"]):
             c["ral_min_median"] = c["ral_max_median"] = None
 
-    # soppressione secondaria, gruppo per gruppo
+    # secondary suppression, group by group
     groups = {}
     for c in cells:
-        if c["dim"] != "totale":
+        if c["dim"] != "total":
             groups.setdefault((c["period"], c["macro"], c["dim"]), []).append(c)
     for group in groups.values():
         hidden = [c for c in group if c["_hidden"]]
@@ -47,7 +47,7 @@ def apply_rules(cells: list[dict]) -> list[dict]:
     for c in cells:
         if c.pop("_hidden"):
             continue
-        for k in ("top_share", "n_ral_companies", "ral_top_share"):   # servono solo al controllo
+        for k in ("top_share", "n_ral_companies", "ral_top_share"):   # only needed for the checks
             c.pop(k)
         public.append(c)
     return public
