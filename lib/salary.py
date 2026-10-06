@@ -29,7 +29,7 @@ VAGUE_SALARY_RE = re.compile(
     r"|(?:secondo|come da|previsto dal|in base al|da) (?:il |l.)?CCNL"
     r"|inquadramento[^.\n]{0,40}CCNL"
     r"|in accordance with the CCNL"
-    r"|competitive (?:salary|compensation|pay|package)"
+    r"|competitive (?:\w+ )?(?:salary|compensation|pay|package)"
     r"|(?:salary|compensation) (?:commensurate|based on experience|DOE)"
     r"|commensurate with experience",
     re.IGNORECASE,
@@ -51,6 +51,22 @@ YEARLY_FROM = 10_000   # a figure of €10,000 or more is annual, whatever words
 _CORPORATE_RE = re.compile(
     r"\b(?:mld|mln|miliard\w*|milion\w*|billion|million|bn|ricavi|fatturato|revenue\w*|turnover|ordini"
     r"|investit\w*|capitalizzazione)\b", re.IGNORECASE)
+# benefit amounts ("meal vouchers €8/day", "€1,200/year travel discount", "€1,000 bonus for your wedding"):
+# skipped when the phrase itself names no pay keyword
+_BENEFIT_RE = re.compile(
+    r"\b(?:vouchers?|buon[io] pasto|ticket restaurant|discount|scont\w*|welfare|wedding|matrimonio"
+    r"|parent\w*|genitori\w*|referral|bonus (?:for|per))\b", re.IGNORECASE)
+_PAY_WORD_RE = re.compile(r"\bRAL\b|retribu|salar|stipend|compens|\bpay\b|lord|rimborso|reimburs|indennit|allowance"
+                          r"|\bstage\b|tirocin|intern|monthly|mensil|al mese",
+                          re.IGNORECASE)
+
+
+def _is_benefit(text: str, m) -> bool:
+    """An amount among benefits, with no pay word in the phrase or just before it."""
+    return (not _PAY_WORD_RE.search(text[max(0, m.start() - 30): m.end()])
+            and bool(_BENEFIT_RE.search(text[max(0, m.start() - 50): m.end() + 40])))
+
+
 _GROSS_RE = re.compile(r"lord[oaie]|\bgross\b|\bRAL\b", re.I)
 _NET_RE = re.compile(r"nett[oaie]|\bnet\b", re.I)
 _CURRENCIES = [("EUR", r"€|\bEUR\b|\beuro"), ("USD", r"\$|\bUSD\b"),
@@ -61,7 +77,8 @@ def find_salary(text: str) -> list[str]:
     """The first 3 distinct phrases that contain a pay figure."""
     text = normalize_currency(text)
     found = (m.group(0).strip() for m in SALARY_RE.finditer(text)
-             if not _CORPORATE_RE.search(text[m.start(): m.end() + 25]))   # no company revenue/orders
+             if not _CORPORATE_RE.search(text[m.start(): m.end() + 25])     # no company revenue/orders
+             and not _is_benefit(text, m))
     return list(dict.fromkeys(found))[:3]
 
 
@@ -131,7 +148,7 @@ def parse_salary(text: str):
         # wider context for period, currency and gross/net
         context = text[max(0, m.start() - 60): m.end() + 80]
         # company amounts (revenue, orders, investments) in the company intro: not salaries
-        if _CORPORATE_RE.search(text[m.start(): m.end() + 25]):
+        if _CORPORATE_RE.search(text[m.start(): m.end() + 25]) or _is_benefit(text, m):
             continue
 
         raw = []   # (value, had k/mila, original text)

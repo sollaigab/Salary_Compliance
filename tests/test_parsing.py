@@ -301,6 +301,29 @@ def test_daily_rate():
     assert annualize(70, "day", "EUR", None) is None     # not converted to an annual salary
 
 
+def test_benefits_are_not_pay():
+    text = ("Meal vouchers (€8/day), a €1,000 bonus for your wedding, €1,200/year travel discount, "
+            "New parent support – €3,600/year")
+    assert parse_salary(text) is None
+    assert find_salary(text) == []
+    # a real salary or internship allowance next to benefits is still found
+    s = parse_salary("RAL 35.000 - 40.000 € + buoni pasto da 8 €")
+    assert (s["min"], s["max"]) == (35000, 40000)
+    assert parse_salary("Inserimento in stage curricolare 6 mesi 500€ + 140€ buoni pasto")["min"] == 500
+    assert parse_salary("6 months internship Monthly Reimbursement of 1000 Euros Meal vouchers")["min"] == 1000
+
+
+def test_vague_with_extra_word():
+    assert is_vague("Competitive monthly compensation and meal vouchers will be provided.")
+
+
+def test_open_applications():
+    assert enrich.is_open_application("Candidatura Spontanea - Categorie Protette")
+    assert enrich.is_open_application("Spontaneous application - Categorie Protette (L.68/99)")
+    assert enrich.is_open_application("AUTOCANDIDATURA")
+    assert not enrich.is_open_application("Data Analyst")
+
+
 def test_percentage_is_not_a_figure():
     s = parse_salary("retribuzione totale prevista al raggiungimento del 100% degli obiettivi: €35,200 - €44,000")
     assert (s["min"], s["max"]) == (35200, 44000)

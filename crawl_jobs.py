@@ -25,7 +25,7 @@ import requests
 from lib import db, http
 from lib import locations as loc
 from lib.ats_fetchers import FETCHERS, fetch_oracle, fetch_successfactors, fetch_workday
-from lib.enrich import (contract_type, description_lang, job_function, posted_date, posting_period,
+from lib.enrich import (contract_type, description_lang, is_open_application, job_function, posted_date, posting_period,
                         salary_fields, scrub_personal_data, seniority_with_source, work_schedule,
                         workplace_type)
 from lib.slugs import company_id_from_name
@@ -95,7 +95,9 @@ def derived_fields(title: str, description: str, department, employment_type, st
 
 
 def build_row(job: dict, board: dict, index: loc.LocationIndex, now: str, first_seen: str | None):
-    """From an ATS job ad to a jobs table row (None if not in Italy/remote)."""
+    """From an ATS job ad to a jobs table row (None if not in Italy/remote, or an open application)."""
+    if is_open_application(job["title"]):
+        return None, []
     places = [job["location"]] + list(job["locations_all"] or [])
     normalized = [index.normalize(p, job["country"], job["workplace_type"]) for p in places if p]
     if not normalized and job["country"]:
@@ -209,6 +211,8 @@ def reprocess(conn):
                                 r["posted_at"], r["first_seen"])
         sets = ", ".join(f"{k} = :{k}" for k in update)
         conn.execute(f"UPDATE jobs SET {sets} WHERE job_key = :job_key", {**update, "job_key": r["job_key"]})
+        if is_open_application(title):      # not a job ad: drop it from the analysis
+            conn.execute("UPDATE jobs SET is_active = 0 WHERE job_key = ?", (r["job_key"],))
     conn.commit()
     print(f"Recomputed {len(rows)} job ads.")
 

@@ -22,6 +22,17 @@ def scrub_personal_data(text: str) -> str:
     return PHONE_RE.sub("[phone]", EMAIL_RE.sub("[email]", text or ""))
 
 
+# ---------------------------------------------------------------- open applications
+
+# "Candidatura spontanea", "Talent community": always-open forms, not job ads with a position to fill
+OPEN_APPLICATION_RE = re.compile(r"\b(?:candidatur\w* spontane\w*|autocandidatura|spontaneous applications?"
+                                 r"|open applications?|talent (?:community|pool))\b")
+
+
+def is_open_application(title: str) -> bool:
+    return bool(OPEN_APPLICATION_RE.search(normalize_text(title)))
+
+
 # ---------------------------------------------------------------- seniority
 
 SENIORITY_RULES = [
