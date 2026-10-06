@@ -68,7 +68,9 @@ body {
 
 a { color: var(--accent-ink); text-underline-offset: 2px; }
 h1, h2, h3 { line-height: 1.2; margin: 0; letter-spacing: -0.01em; }
-h1 { font-size: clamp(2rem, 3.6vw, 3.6rem); font-weight: 650; max-width: 18ch; }
+/* display title: tight tracking and leading; balance keeps the lines even when it wraps */
+h1 { font-size: clamp(2.2rem, 4.2vw, 4.4rem); font-weight: 680; line-height: 1.04; letter-spacing: -0.025em;
+     text-wrap: balance; }
 h2 { font-size: 1.25rem; font-weight: 620; }
 h3 { font-size: 1rem; font-weight: 620; margin-top: 1.25rem; }
 p { margin: 0; }
@@ -107,13 +109,9 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 
 /* intro */
 .intro { padding-top: 56px; padding-bottom: 24px; }
-.lede { margin-top: 16px; font-size: 1.2rem; color: var(--ink-2); max-width: 64ch; }
-/* wide screens: title on the left, intro text on the right, so the top uses the full width */
-@media (min-width: 1100px) {
-  .intro { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); column-gap: 64px; align-items: end; }
-  .intro h1 { grid-row: span 2; }
-  .intro .lede { margin-top: 0; }
-}
+/* subtitle under the title: grows with the screen, line length capped at ~65 characters for reading */
+.lede { margin-top: 20px; font-size: clamp(1.15rem, 0.5vw + 0.95rem, 1.4rem); line-height: 1.5;
+        color: var(--ink-2); max-width: 65ch; text-wrap: pretty; }
 .stamp { margin-top: 12px; color: var(--muted); font-size: 0.9rem; }
 
 /* filters: one row above everything they filter */
@@ -128,7 +126,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 #filters input { width: 100%; max-width: none; }
 #filters input::placeholder { color: var(--muted); }
 @media (max-width: 767px) {
-  #filters label { flex: 1 1 45%; }
+  #filters label { flex: 1 1 100%; }   /* one filter per row: option text is never cut */
   #filters select { max-width: none; width: 100%; }
 }
 
@@ -157,8 +155,9 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 .error { color: var(--ink); background: var(--surface); border: 1px solid var(--axis); border-radius: var(--radius); }
 
 /* charts */
-.charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 48px 40px; padding-bottom: 24px; }
-@media (max-width: 900px) { .charts { grid-template-columns: 1fr; } }
+/* charts stacked one under the other; every chart shares the same label column and the same
+   right gutter for the tip value, so all plot areas and axes line up vertically */
+.charts { --label-w: 15rem; --tip: 64px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 64px; padding-bottom: 24px; }
 .chart { margin: 0; min-width: 0; }
 .chart figcaption p { margin-top: 4px; color: var(--ink-2); font-size: 0.9rem; max-width: 72ch; }
 .chart-body { margin-top: 16px; }
@@ -172,16 +171,17 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 /* horizontal bars: label | plot area | value at the tip */
 .bars { display: grid; gap: 6px; }
 .bar-row {
-  display: grid; grid-template-columns: minmax(110px, 34%) minmax(0, 1fr);
-  align-items: center; gap: 12px; border-radius: 4px; padding: 2px 0;
+  display: grid; grid-template-columns: var(--label-w) minmax(0, 1fr);
+  align-items: center; gap: 16px; border-radius: 4px; padding: 2px 0;
 }
 .bar-row:hover, .bar-row:focus-visible { background: color-mix(in srgb, var(--accent) 6%, transparent); }
-.bar-label { font-size: 0.88rem; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* the right margin holds the tip value: bars, grid and axis share the same width */
-.bar-plot { position: relative; height: 22px; display: flex; align-items: center; padding-right: 60px; }
-.bar-plot .gridlines { right: 60px; }
-.axis-bars .axis-scale { margin-right: 60px; }
-.dumb-plot { margin-right: 8px; }
+/* labels wrap instead of being cut with an ellipsis: a truncated category name is unreadable */
+.bar-label { font-size: 0.88rem; line-height: 1.25; color: var(--ink); overflow-wrap: anywhere; }
+/* the right gutter holds the tip value: bars, dumbbells, grid and axis share the same width */
+.bar-plot { position: relative; height: 22px; display: flex; align-items: center; padding-right: var(--tip); }
+.bar-plot .gridlines { right: var(--tip); }
+.axis-scale { margin-right: var(--tip); }
+.dumb-plot { margin-right: var(--tip); }
 .bar {
   height: 14px; background: var(--accent);
   border-radius: 0 4px 4px 0;            /* rounded data end, square base */
@@ -190,7 +190,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 }
 .bar-value { margin-left: 8px; font-size: 0.85rem; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-.axis { display: grid; grid-template-columns: minmax(110px, 34%) minmax(0, 1fr); gap: 12px; margin-top: 6px; }
+.axis { display: grid; grid-template-columns: var(--label-w) minmax(0, 1fr); gap: 16px; margin-top: 6px; }
 .axis-scale { position: relative; height: 18px; border-top: 1px solid var(--axis); }
 .axis-scale span {
   position: absolute; top: 4px; transform: translateX(-50%);

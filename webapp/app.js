@@ -153,12 +153,19 @@ function renderBars(fig, rows, { highlight = null } = {}) {
 }
 
 // dumbbell: minimum and maximum of the range (medians), two shades of the same blue
-function renderDumbbell(fig, rows) {
+// salary domain rounded to €10k, shared by the salary charts so their axes line up
+function salaryDomain(rows) {
+  rows = rows.filter((r) => r.ral_min_median != null);
+  if (!rows.length) return null;
+  return [Math.floor(Math.min(...rows.map((r) => r.ral_min_median)) / 10000) * 10000,
+          Math.ceil(Math.max(...rows.map((r) => r.ral_max_median)) / 10000) * 10000];
+}
+
+function renderDumbbell(fig, rows, domain = salaryDomain(rows)) {
   rows = rows.filter((r) => r.ral_min_median != null);
   if (!rows.length) return emptyChart(fig);
   const body = fig.querySelector(".chart-body");
-  const lo = Math.floor(Math.min(...rows.map((r) => r.ral_min_median)) / 10000) * 10000;
-  const hi = Math.ceil(Math.max(...rows.map((r) => r.ral_max_median)) / 10000) * 10000;
+  const [lo, hi] = domain;
   const step = (hi - lo) / 10000 > 6 ? 20000 : 10000;
   const ticks = [];
   for (let t = lo; t <= hi; t += step) ticks.push(t);
@@ -232,11 +239,13 @@ function update() {
   renderBars($("#chart-macro"), named(select(f.period, "all", "macro_sector"), "macro_sector").sort(byPct),
     { highlight: f.macro !== "all" ? f.macro : null });
   renderBars($("#chart-region"), named(select(f.period, f.macro, "region"), "region").sort(byPct));
-  renderDumbbell($("#chart-function"),
-    named(select(f.period, f.macro, "job_function"), "job_function").sort((a, b) => b.ral_max_median - a.ral_max_median));
-  renderDumbbell($("#chart-seniority"),
-    named(select(f.period, f.macro, "seniority").filter((r) => r.value !== "not_stated"), "seniority")
-      .sort((a, b) => SENIORITY_ORDER.indexOf(a.value) - SENIORITY_ORDER.indexOf(b.value)));
+  const byFunction = named(select(f.period, f.macro, "job_function"), "job_function")
+    .sort((a, b) => b.ral_max_median - a.ral_max_median);
+  const bySeniority = named(select(f.period, f.macro, "seniority").filter((r) => r.value !== "not_stated"), "seniority")
+    .sort((a, b) => SENIORITY_ORDER.indexOf(a.value) - SENIORITY_ORDER.indexOf(b.value));
+  const salaryScale = salaryDomain([...byFunction, ...bySeniority]);
+  renderDumbbell($("#chart-function"), byFunction, salaryScale);
+  renderDumbbell($("#chart-seniority"), bySeniority, salaryScale);
   renderBars($("#chart-contract"),
     named(select(f.period, f.macro, "contract_type").filter((r) => r.value !== "not_stated"), "contract_type").sort(byPct));
   renderBars($("#chart-period"),
