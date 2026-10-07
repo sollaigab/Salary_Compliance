@@ -60,6 +60,7 @@ function filtersFromHash() {
 // ------------------------------------------------------------------ tooltip
 
 const tip = $("#tooltip");
+addEventListener("scroll", () => { tip.hidden = true; }, { passive: true });
 function attachTooltip(el, value, name, extra = "") {
   const show = (x, y) => {
     tip.replaceChildren();
@@ -73,8 +74,14 @@ function attachTooltip(el, value, name, extra = "") {
     tip.style.left = `${Math.min(x + 14, innerWidth - w - 8)}px`;
     tip.style.top = `${Math.max(8, y - h - 12)}px`;
   };
-  el.addEventListener("pointermove", (e) => show(e.clientX, e.clientY));
-  el.addEventListener("focus", () => { const r = el.getBoundingClientRect(); show(r.left + r.width / 2, r.top); });
+  // touch has no hover and no pointer leaving the element: no tooltip there (the table view has the numbers)
+  el.addEventListener("pointermove", (e) => { if (e.pointerType !== "touch") show(e.clientX, e.clientY); });
+  // keyboard focus only: a tap also focuses the row, and the tooltip would stay open over the page
+  el.addEventListener("focus", () => {
+    if (!el.matches(":focus-visible")) return;
+    const r = el.getBoundingClientRect();
+    show(r.left + r.width / 2, r.top);
+  });
   el.addEventListener("pointerleave", () => { tip.hidden = true; });
   el.addEventListener("blur", () => { tip.hidden = true; });
 }

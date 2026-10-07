@@ -142,13 +142,15 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 }
 .hero-value { font-size: clamp(3.5rem, 8vw, 5.5rem); font-weight: 650; line-height: 1; letter-spacing: -0.02em; }
 .hero-label { margin-top: 8px; color: var(--ink-2); }
-.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; margin: 0; }
+/* the salary range is the widest value: it gets a wider column, and a full row on narrow screens */
+.kpis { display: grid; grid-template-columns: minmax(0, 1.7fr) repeat(3, minmax(0, 1fr)); gap: 24px; margin: 0; }
 .kpis div { border-top: 1px solid var(--axis); padding-top: 12px; }
 .kpis dt { font-size: 0.85rem; color: var(--ink-2); }
 .kpis dd { margin: 6px 0 0; font-size: 1.35rem; font-weight: 620; white-space: nowrap; }
 @media (max-width: 900px) {
   .headline { grid-template-columns: 1fr; }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpis div:first-child { grid-column: 1 / -1; }
 }
 
 .error { padding: 32px 24px; color: var(--ink-2); }
