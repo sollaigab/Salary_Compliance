@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Salary Transparency Observatory</title>
-  <meta name="description" content="How many job ads in Italy state the pay after Legislative Decree 96/2026, and which salaries they offer by sector, function and region. Aggregate data.">
+  <meta name="description" content="How many job ads in Italy state the pay after Legislative Decree 96/2026, and which salaries they offer by sector, function, region and work arrangement. Aggregate data.">
   <link rel="stylesheet" href="style.css">
   <script type="module" src="app.js"></script>
 </head>
@@ -36,12 +36,21 @@
             <option value="all">All ads online</option>
           </select>
         </label>
-        <label class="wide">Sector
+        <label>Country
+          <select name="country"><option value="all">All countries</option></select>
+        </label>
+        <label>Sector
           <select name="macro"><option value="all">All sectors</option></select>
+        </label>
+        <label>Job function
+          <select name="function"><option value="all">All functions</option></select>
+        </label>
+        <label>Work arrangement
+          <select name="workplace"><option value="all">Any arrangement</option></select>
         </label>
         <button type="reset" class="ghost">Reset filters</button>
       </form>
-      <p class="note">The data is aggregated by sector and does not show single companies. Combinations with few ads or few companies are hidden.</p>
+      <p class="note">The data is aggregated and does not show single companies. Combinations with few ads or few companies are hidden, so some filter choices show less detail.</p>
     </section>
 
     <div id="results" class="results is-loading" aria-live="polite">
@@ -56,60 +65,115 @@
           <div><dt>Companies</dt><dd id="kpi-companies">-</dd></div>
           <div><dt>Vague wording only</dt><dd id="kpi-vague">-</dd></div>
         </dl>
+        <p class="headline-empty" id="kpi-empty" hidden>Too few job ads or companies for this combination of filters: the figures would make single companies recognizable. Try removing a filter.</p>
       </section>
 
-      <section class="wrap charts">
-        <figure class="chart" id="chart-macro">
-          <figcaption><h2>Ads that state the pay, by sector</h2><p>Share of all the sector's ads. The selected sector is highlighted.</p></figcaption>
-          <div class="chart-body"></div>
-          <details class="table-view"><summary>View as table</summary><div></div></details>
-        </figure>
+      <div class="wrap charts">
+        <section class="chart-group" aria-labelledby="g-transparency">
+          <header class="group-head">
+            <h2 id="g-transparency">Who states the pay</h2>
+            <p>Share of job ads that give a figure or a range.</p>
+          </header>
 
-        <figure class="chart" id="chart-region">
-          <figcaption><h2>Ads that state the pay, by region</h2><p>Share of all the region's ads.</p></figcaption>
-          <div class="chart-body"></div>
-          <details class="table-view"><summary>View as table</summary><div></div></details>
-        </figure>
+          <figure class="chart" id="chart-country">
+            <figcaption><h3>By country</h3><p>Italy has had the obligation since 7 June 2026. Germany, the Netherlands and France had not yet transposed the EU directive by that date, so they serve as the comparison.</p></figcaption>
+            <div class="chart-body"></div>
+            <details class="table-view"><summary>View as table</summary><div></div></details>
+          </figure>
 
-        <figure class="chart" id="chart-function">
-          <figcaption><h2>Salary offered, by function</h2><p>Median of the bottom and the top of the range, in gross euros per year.</p></figcaption>
-          <ul class="legend" aria-label="Legend">
-            <li><span class="key key-lo"></span>Bottom of the range</li>
-            <li><span class="key key-hi"></span>Top of the range</li>
-          </ul>
-          <div class="chart-body"></div>
-          <details class="table-view"><summary>View as table</summary><div></div></details>
-        </figure>
+          <figure class="chart" id="chart-macro">
+            <figcaption><h3>By sector</h3><p>The selected sector is highlighted.</p></figcaption>
+            <div class="chart-body"></div>
+            <details class="table-view"><summary>View as table</summary><div></div></details>
+          </figure>
 
-        <figure class="chart" id="chart-seniority">
-          <figcaption><h2>Salary offered, by seniority</h2><p>Median of the bottom and the top of the range, in gross euros per year. Only ads that state the level or the years of experience required.</p></figcaption>
-          <ul class="legend" aria-label="Legend">
-            <li><span class="key key-lo"></span>Bottom of the range</li>
-            <li><span class="key key-hi"></span>Top of the range</li>
-          </ul>
-          <div class="chart-body"></div>
-          <details class="table-view"><summary>View as table</summary><div></div></details>
-        </figure>
+          <figure class="chart" id="chart-region">
+            <figcaption><h3>By region</h3><p>Where the job is located. Ads for remote work are counted apart.</p></figcaption>
+            <div class="chart-body"></div>
+            <details class="table-view"><summary>View as table</summary><div></div></details>
+          </figure>
 
-        <figure class="chart" id="chart-contract">
-          <figcaption><h2>Ads that state the pay, by contract</h2><p>Share of all ads with that contract type.</p></figcaption>
-          <div class="chart-body"></div>
-          <details class="table-view"><summary>View as table</summary><div></div></details>
-        </figure>
+          <figure class="chart" id="chart-contract">
+            <figcaption><h3>By contract</h3><p>Only ads that state the contract type.</p></figcaption>
+            <div class="chart-body"></div>
+            <details class="table-view"><summary>View as table</summary><div></div></details>
+          </figure>
 
-        <figure class="chart" id="chart-period">
-          <figcaption><h2>Before and after the law</h2><p>By publication date, across all ads online. "Before the law" covers the 12 months before 7 June 2026. Older ads still online do not represent the market of that time (see the methodology).</p></figcaption>
-          <div class="chart-body"></div>
-          <details class="table-view"><summary>View as table</summary><div></div></details>
-        </figure>
-      </section>
+          <figure class="chart" id="chart-workplace-pct">
+            <figcaption><h3>By work arrangement</h3><p>On site, hybrid or remote, as stated in the ad or implied by the role (stores, plants, clinics).</p></figcaption>
+            <div class="chart-body"></div>
+            <details class="table-view"><summary>View as table</summary><div></div></details>
+          </figure>
+
+          <figure class="chart" id="chart-period">
+            <figcaption><h3>Before and after the law</h3><p>By publication date, across all ads online. "Before the law" covers the 12 months before 7 June 2026. Older ads still online do not represent the market of that time (see the methodology).</p></figcaption>
+            <div class="chart-body"></div>
+            <details class="table-view"><summary>View as table</summary><div></div></details>
+          </figure>
+        </section>
+
+        <section class="chart-group" aria-labelledby="g-pay">
+          <header class="group-head">
+            <h2 id="g-pay">How much they offer</h2>
+            <p>Median of the bottom and of the top of the stated range, in gross euros per year. The four charts share the same scale.</p>
+            <ul class="legend" aria-label="Legend">
+              <li><span class="key key-lo"></span>Bottom of the range</li>
+              <li><span class="key key-hi"></span>Top of the range</li>
+            </ul>
+          </header>
+
+          <figure class="chart" id="chart-function">
+            <figcaption><h3>By job function</h3></figcaption>
+            <div class="chart-body"></div>
+            <details class="table-view"><summary>View as table</summary><div></div></details>
+          </figure>
+
+          <figure class="chart" id="chart-seniority">
+            <figcaption><h3>By seniority</h3><p>Only ads that state the level or the years of experience required.</p></figcaption>
+            <div class="chart-body"></div>
+            <details class="table-view"><summary>View as table</summary><div></div></details>
+          </figure>
+
+          <figure class="chart" id="chart-region-pay">
+            <figcaption><h3>By region</h3></figcaption>
+            <div class="chart-body"></div>
+            <details class="table-view"><summary>View as table</summary><div></div></details>
+          </figure>
+
+          <figure class="chart" id="chart-workplace-pay">
+            <figcaption><h3>By work arrangement</h3></figcaption>
+            <div class="chart-body"></div>
+            <details class="table-view"><summary>View as table</summary><div></div></details>
+          </figure>
+        </section>
+
+        <section class="chart-group" aria-labelledby="g-work">
+          <header class="group-head">
+            <h2 id="g-work">Where the work happens</h2>
+            <p>Share of job ads by work arrangement, in each sector. "Not stated": the ad does not say and the role does not imply it.</p>
+            <ul class="legend" aria-label="Legend">
+              <li><span class="key key-onsite"></span>On site</li>
+              <li><span class="key key-hybrid"></span>Hybrid</li>
+              <li><span class="key key-remote"></span>Remote</li>
+              <li><span class="key key-not_stated"></span>Not stated</li>
+              <li><span class="key key-hidden"></span>Hidden (too few ads)</li>
+            </ul>
+          </header>
+
+          <figure class="chart" id="chart-workplace-mix">
+            <figcaption class="visually-hidden"><h3>Work arrangement by sector</h3></figcaption>
+            <div class="chart-body"></div>
+            <details class="table-view"><summary>View as table</summary><div></div></details>
+          </figure>
+        </section>
+      </div>
     </div>
 
     <p class="wrap error" id="error" hidden></p>
 
     <section class="wrap block" id="data">
       <h2>Download the data</h2>
-      <p class="note">The same aggregate data as the charts, with counts, shares and medians: one row for each combination of period, sector and dimension.</p>
+      <p class="note">The same aggregate data as the charts, with counts, shares and medians: one row for each combination of filters (period, sector, job function, work arrangement) and dimension. "all" means no filter.</p>
       <p class="download"><a href="data/aggregates.csv" download>aggregates.csv</a></p>
       <p class="note">Data license: <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. You can reuse it with attribution.</p>
     </section>
@@ -119,20 +183,24 @@
       <div class="method-grid">
         <div>
           <h3>Sources</h3>
-          <p>The ads come from company career sites, read through the public APIs and feeds of their applicant tracking systems (Greenhouse, Lever, Ashby, Workday, Workable, Recruitee, Teamtailor, Oracle Recruiting, SuccessFactors). No logins and no third-party job boards are used.</p>
+          <p>The ads come from company career sites, read through the public APIs and feeds of their applicant tracking systems (Greenhouse, Lever, Ashby, Workday, Workable, Recruitee, Teamtailor, Oracle Recruiting, SuccessFactors). No logins and no third-party job boards are used. Locations are matched to official lists of municipalities: ISTAT for Italy, Eurostat (LAU 2023 and NUTS 2021) for the other countries.</p>
           <h3>Collection rules</h3>
           <p>The collection respects robots.txt and text and data mining opt-outs (art. 70-quater of Italian Law 633/1941). Requests are spaced out and stop when a service asks for a pause. The ad text is not republished, and recruiters' personal data is not stored.</p>
           <h3>Protecting the companies</h3>
-          <p>Only data aggregated by sector is published. A combination appears if it covers at least <span data-meta="rules.min_jobs"></span> ads from at least <span data-meta="rules.min_companies"></span> different companies and no company has more than <span data-meta="rules.max_share_pct"></span> of the ads. When only one combination in a group is hidden, the smallest of the others is hidden too, so it cannot be worked out by subtraction.</p>
+          <p>Only aggregate data is published. A combination appears if it covers at least <span data-meta="rules.min_jobs"></span> ads from at least <span data-meta="rules.min_companies"></span> different companies and no company has more than <span data-meta="rules.max_share_pct"></span> of the ads. When only one combination in a group is hidden, the smallest of the others is hidden too, so it cannot be worked out by subtraction. For the same reason, a filtered figure is hidden when removing the filter would leave a small group, such as the few ads of one company.</p>
         </div>
         <div>
           <h3>What is measured</h3>
-          <p>An ad "states the pay" if it gives a figure or a range, in the text or in the dedicated field of the applicant tracking system. Monthly figures are converted to gross annual salary over 14 monthly payments, the Italian norm (12 for internships). The main analysis covers ads published from 7 June 2026.</p>
+          <p>An ad "states the pay" if it gives a figure or a range, in the text or in the dedicated field of the applicant tracking system. Monthly figures are converted to gross annual salary over 14 monthly payments in Italy, the Italian norm, and over 12 in Germany, France and the Netherlands (where the 8% holiday allowance, paid separately, is not added); internships always over 12. The main analysis covers ads published from 7 June 2026, the deadline for every EU country to transpose the pay transparency directive (2023/970).</p>
+          <h3>Countries</h3>
+          <p>Italy is the main subject: its obligation applies from 7 June 2026. Germany, the Netherlands and France are observed as a comparison, with the same method: according to the published legislative timetables they had not transposed the directive by that date. Ads are counted in the country where the job is located; the few ads for remote work anywhere in Europe, with no country, are left out.</p>
+          <h3>Work arrangement</h3>
+          <p>Taken from the applicant tracking system when it has a field for it, otherwise from the ad text. When neither says, roles that can only be done in person (store, kitchen, plant, network and clinic staff) are counted as on site.</p>
           <h3>Limits</h3>
           <ul>
             <li>Only ads online since <span data-meta="observed_from"></span> are observed: older ads still online are not a sample of the market before the law.</li>
             <li>The data covers <span data-meta="n_companies_active"></span> of the <span data-meta="n_companies_seed"></span> companies analyzed. Companies whose systems have no public source are left out, so the results describe these companies, not the whole market.</li>
-            <li>Pay and seniority are extracted from the text with automatic rules, which are being checked by hand on a sample of ads.</li>
+            <li>Pay, seniority and work arrangement are extracted from the text with automatic rules, which are being checked by hand on samples of ads.</li>
             <li>The publication date means slightly different things across applicant tracking systems.</li>
           </ul>
         </div>

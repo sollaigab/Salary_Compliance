@@ -33,7 +33,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 
 from lib import db, http
-from lib.ats_fetchers import (FETCHERS, count_italy, discover_workday_site, oracle_summary,
+from lib.ats_fetchers import (FETCHERS, count_italy, count_scope, discover_workday_site, oracle_summary,
                               successfactors_summary, workday_summary)
 from lib.ats_fingerprints import PARTIAL_ATS, SUPPORTED_ATS, find_fingerprints, sort_fingerprints
 from lib.slugs import candidate_slugs, company_id_from_name, core_tokens, name_match, workday_tenants
@@ -44,7 +44,7 @@ REGISTRY_CSV = db.ROOT / "data" / "ats_registry.csv"
 
 REGISTRY_COLUMNS = [
     "company_id", "company", "sector", "is_tech", "ats", "slug_or_url", "instance", "supported",
-    "detection_method", "confidence", "n_jobs_total", "n_jobs_italy", "careers_url", "evidence",
+    "detection_method", "confidence", "n_jobs_total", "n_jobs_italy", "n_jobs_scope", "careers_url", "evidence",
     "last_checked", "notes",
 ]
 
@@ -108,6 +108,7 @@ def save_companies(conn, companies: list[dict]):
         db.upsert(conn, "companies", {
             "company_id": c["company_id"], "name": c["name"], "website": c["website"],
             "website_verified": c["website_verified"], "sector": c["sector"],
+            "micro_sector": c.get("micro_sector") or None,
             "is_tech": c["is_tech"], "company_type": c.get("company_type"),
             "hq_city": c.get("hq_city"), "size_band": c.get("size_band"),
             "source": c.get("source"), "updated_at": db.now_iso(),
@@ -274,18 +275,20 @@ SUMMARIES = {"workday": workday_summary, "oracle": oracle_summary,
 
 
 def inspect_board(company: dict, ats: str, slug_or_url: str, instance: str = None) -> dict:
-    """Downloads the board and measures: total ads, ads in Italy, whether the company name appears."""
+    """Downloads the board and measures: total ads, ads in Italy and in all observed countries (Italy,
+    Germany, the Netherlands, France), whether the company name appears."""
     italy_note = None
     try:
         if ats in SUMMARIES:
             # large or slow boards: a light summary instead of downloading everything
             s = SUMMARIES[ats](slug_or_url)
             total, italy, texts, slug_or_url, instance = s["total"], s["italy"], s["texts"], s["url"], None
+            scope = s.get("scope", italy)
             if s["italy_estimated"]:
-                italy_note = "n_jobs_italy estimated from a sample of ads"
+                italy_note = "ads per country estimated from a sample of ads"
         else:
             jobs, meta = FETCHERS[ats](slug_or_url, instance)
-            total, italy = len(jobs), count_italy(jobs)
+            total, italy, scope = len(jobs), count_italy(jobs), count_scope(jobs)
             instance = meta.get("instance")
             # only board name, titles and descriptions: NOT the URLs, which contain the slug being tested
             texts = [meta.get("board_name")] + [f"{j['title']} {j['description'][:3000]}" for j in jobs[:25]]
@@ -298,7 +301,7 @@ def inspect_board(company: dict, ats: str, slug_or_url: str, instance: str = Non
         return {"ok": False, "error": f"HTTP {code}" if code else type(e).__name__}
     return {
         "ok": True, "slug_or_url": slug_or_url, "instance": instance,
-        "n_jobs_total": total, "n_jobs_italy": italy,
+        "n_jobs_total": total, "n_jobs_italy": italy, "n_jobs_scope": scope,
         "match": name_match(company["name"], company["website"], texts),
         "italy_note": italy_note,
     }
@@ -320,8 +323,11 @@ def confidence_for(method: str, info: dict) -> str:
 
 
 def no_italy(info: dict) -> bool:
-    """The board has ads but none in Italy (count known and equal to zero)."""
-    return info.get("n_jobs_italy") == 0
+    """The board has ads but none in the observed countries (count known and equal to zero).
+    (Named after Italy, the first country observed; boards counted before the other countries were
+    added have only the Italy count.)"""
+    scope = info.get("n_jobs_scope")
+    return (scope if scope is not None else info.get("n_jobs_italy")) == 0
 
 
 def workday_probe_plan(tenants: list[str]) -> list[tuple[str, str]]:
@@ -414,7 +420,8 @@ def fill_from_info(row: dict, ats: str, info: dict, method: str, confidence: str
     row.update(ats=ats, supported=1, detection_method=method, confidence=confidence,
                slug_or_url=info.get("slug_or_url", row.get("slug_or_url")),
                instance=info.get("instance"),
-               n_jobs_total=info.get("n_jobs_total"), n_jobs_italy=info.get("n_jobs_italy"))
+               n_jobs_total=info.get("n_jobs_total"), n_jobs_italy=info.get("n_jobs_italy"),
+               n_jobs_scope=info.get("n_jobs_scope"))
     if notes is not None and info.get("italy_note"):
         notes.append(info["italy_note"])
 
@@ -432,6 +439,7 @@ def apply_override(company: dict, override: dict) -> dict:
         info = inspect_board(company, ats, row["slug_or_url"], row["instance"])
         if info["ok"]:
             row.update(n_jobs_total=info["n_jobs_total"], n_jobs_italy=info["n_jobs_italy"],
+                       n_jobs_scope=info["n_jobs_scope"],
                        instance=info["instance"] or row["instance"])
         else:
             row["notes"] = f"{row['notes'] or ''} [override unreachable: {info['error']}]".strip()

@@ -26,8 +26,10 @@ def connect(path: Path = DB_PATH) -> sqlite3.Connection:
 # Columns added after the first schema version: an existing DB needs them added explicitly
 LATER_COLUMNS = {
     "locations": {"region_code": "TEXT"},
+    "ats_registry": {"n_jobs_scope": "INTEGER"},
+    "companies": {"micro_sector": "TEXT"},
     "jobs": {"posted_date": "TEXT", "posting_period": "TEXT", "seniority_source": "TEXT",
-             "experience_years": "INTEGER"},
+             "experience_years": "INTEGER", "workplace_ats": "TEXT", "workplace_source": "TEXT"},
 }
 
 

@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS companies (
     website_verified  INTEGER,            -- 0 = website "to be verified"
     sector            TEXT,               -- banks, insurance, energy_utilities, software_saas, ...
     is_tech           INTEGER,
+    micro_sector      TEXT,               -- finer sector tied to a NACE division (see lib/labels.py)
     company_type      TEXT,               -- listing/ownership type (FTSE MIB listed, other listed, foreign multinational, private, scaleup, public)
     hq_city           TEXT,               -- main office in Italy
     size_band         TEXT,               -- employees worldwide: S <250, M 250-1k, L 1k-10k, XL >10k
@@ -31,6 +32,7 @@ CREATE TABLE IF NOT EXISTS ats_registry (
     confidence        TEXT,               -- high / medium / low (low = manual review)
     n_jobs_total      INTEGER,
     n_jobs_italy      INTEGER,
+    n_jobs_scope      INTEGER,            -- ads in all observed countries (Italy, Germany, Netherlands, France)
     careers_url       TEXT,               -- career page found on the website
     evidence          TEXT,               -- text that triggered the detection
     last_checked      TEXT,
@@ -73,6 +75,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     contract_type          TEXT,          -- permanent, fixed_term, internship, apprenticeship, freelance, agency
     work_schedule          TEXT,          -- full_time, part_time
     workplace_type         TEXT,          -- onsite, hybrid, remote
+    workplace_ats          TEXT,          -- workplace value as the ATS gives it
+    workplace_source       TEXT,          -- ats / text / location: where workplace_type comes from
     location_raw           TEXT,
     location_id            TEXT REFERENCES locations(location_id),   -- main location
     city                   TEXT,

@@ -1,14 +1,15 @@
 """
 Phase 2: downloads the job ads of the ready companies and stores them, normalized, in the `jobs` table.
 
-Reads ats_registry (only supported = 1 with high or medium confidence), keeps the ads located in Italy
-or remote (Italy/Europe), enriches them (ISTAT location, seniority, function, contract, pay)
-and updates the history: first_seen, last_seen, is_active.
+Reads ats_registry (only supported = 1 with high or medium confidence), keeps the ads located in the
+observed countries (Italy, Germany, the Netherlands, France) or remote in Europe, enriches them
+(ISTAT/Eurostat location, seniority, function, contract, pay) and updates the history: first_seen,
+last_seen, is_active.
 
 Usage:
     python crawl_jobs.py --cache                          # every ready board
     python crawl_jobs.py --only "Company A,Company B"     # only some companies
-    python crawl_jobs.py --max-jobs 200                   # max ads downloaded per board
+    python crawl_jobs.py --max-jobs 200                   # max ads downloaded per board and country
 
 The access rules (robots.txt, TDM reservation, pauses, stop on request) live in lib/http.py.
 Emails and phone numbers in the descriptions are removed before saving (GDPR).
@@ -27,10 +28,14 @@ from lib import locations as loc
 from lib.ats_fetchers import FETCHERS, fetch_oracle, fetch_successfactors, fetch_workday
 from lib.enrich import (contract_type, description_lang, is_open_application, job_function, posted_date, posting_period,
                         salary_fields, scrub_personal_data, seniority_with_source, work_schedule,
-                        workplace_type)
+                        workplace_with_source)
 from lib.slugs import company_id_from_name
 
-DEFAULT_MAX_JOBS = 400   # per board: safety cap on detail requests
+COUNTRY_CODES = {name: code for code, name in loc.COUNTRY_NAMES.items()}   # "Germany" -> "DE"
+
+# ATSs that expose a workplace field (on site / hybrid / remote) in their public data
+ATS_WITH_WORKPLACE_FIELD = {"lever", "ashby", "workday", "oracle", "teamtailor", "recruitee", "workable"}
+DEFAULT_MAX_JOBS = 400   # per board and country (Workday, SuccessFactors): safety cap on detail requests
 
 
 # ---------------------------------------------------------------- geography
@@ -39,26 +44,27 @@ def ensure_locations(conn) -> loc.LocationIndex:
     """Fills the locations table (once) and returns the index used to recognize locations."""
     loc.download_reference(http)
     comuni = loc.load_comuni()
+    foreign, foreign_special = loc.load_foreign()
     n = conn.execute("SELECT COUNT(*) FROM locations").fetchone()[0]
-    if n < len(comuni):
-        for row in comuni + loc.special_locations(comuni):
+    if n < len(comuni) + len(foreign):
+        for row in comuni + loc.special_locations(comuni) + foreign + foreign_special:
             db.upsert(conn, "locations", row, key="location_id")
         conn.commit()
-        print(f"locations table: {len(comuni)} ISTAT municipalities + regions and special rows")
-    return loc.LocationIndex(comuni)
+        print(f"locations table: {len(comuni)} ISTAT and {len(foreign)} Eurostat municipalities + regions and special rows")
+    return loc.LocationIndex(comuni, foreign)
 
 
 # ---------------------------------------------------------------- download
 
 def fetch_board(board: dict, max_jobs: int) -> list[dict]:
-    """The board's ads. For the 'heavy' ATSs the Italy filter runs before fetching details."""
+    """The board's ads. For the 'heavy' ATSs the country filter runs before fetching details."""
     ats, target = board["ats"], board["slug_or_url"]
     if ats == "workday":
-        jobs, _ = fetch_workday(target, max_jobs=max_jobs, italy_only=True)
+        jobs, _ = fetch_workday(target, max_jobs=max_jobs, scope_only=True)
     elif ats == "oracle":
-        jobs, _ = fetch_oracle(target, italy_only=True)
+        jobs, _ = fetch_oracle(target, scope_only=True)
     elif ats == "successfactors":
-        jobs, _ = fetch_successfactors(target, max_jobs=max_jobs, italy_only=True)
+        jobs, _ = fetch_successfactors(target, max_jobs=max_jobs, scope_only=True)
     else:
         jobs, _ = FETCHERS[ats](target, board["instance"])
     return jobs
@@ -67,18 +73,20 @@ def fetch_board(board: dict, max_jobs: int) -> list[dict]:
 # ---------------------------------------------------------------- normalization
 
 def keep_location(norm: dict) -> bool:
-    """Keep ads located in Italy or remote (Italy/Europe)."""
+    """Keep ads located in the observed countries (Italy, Germany, the Netherlands, France) or remote in Europe."""
     lid = norm["location_id"] or ""
-    return lid.startswith("IT") or lid == "EU-REMOTE"
+    return lid.split("-")[0] in loc.COUNTRY_NAMES or lid == "EU-REMOTE"
 
 
 def derived_fields(title: str, description: str, department, employment_type, structured,
-                   posted_at, first_seen: str) -> dict:
-    """Fields computed by the rules in lib/enrich.py: used by the crawl and by --reprocess."""
+                   posted_at, first_seen: str, country: str = "Italy") -> dict:
+    """Fields computed by the rules in lib/enrich.py: used by the crawl and by --reprocess.
+    country: the English name of the ad's country (monthly pay is annualized by country)."""
     level, level_source, years = seniority_with_source(title, description)
     contract = contract_type(employment_type, title, description)
     salary = salary_fields(structured, f"{title} {description}",
-                           is_internship=(level == "intern" or contract == "internship"))
+                           is_internship=(level == "intern" or contract == "internship"),
+                           country=COUNTRY_CODES.get(country, "IT"))
     return {
         "job_function": job_function(title, department),
         "seniority": level,
@@ -94,18 +102,27 @@ def derived_fields(title: str, description: str, department, employment_type, st
     }
 
 
+def workplace_fields(ats_value, location, description: str, is_remote, title: str = "") -> dict:
+    """workplace_type and where it comes from: the ATS field, the description, a remote-only location,
+    or a title that can only be done in person."""
+    value, source = workplace_with_source(ats_value, location, description, title)
+    if not value and is_remote:
+        value, source = "remote", "location"
+    return {"workplace_type": value, "workplace_source": source}
+
+
 def build_row(job: dict, board: dict, index: loc.LocationIndex, now: str, first_seen: str | None):
-    """From an ATS job ad to a jobs table row (None if not in Italy/remote, or an open application)."""
+    """From an ATS job ad to a jobs table row (None if outside the observed countries, or an open application)."""
     if is_open_application(job["title"]):
         return None, []
     places = [job["location"]] + list(job["locations_all"] or [])
     normalized = [index.normalize(p, job["country"], job["workplace_type"]) for p in places if p]
     if not normalized and job["country"]:
         normalized = [index.normalize("", job["country"], job["workplace_type"])]
-    italian = [n for n in normalized if keep_location(n)]
-    if not italian:
+    kept = [n for n in normalized if keep_location(n)]
+    if not kept:
         return None, []
-    main = italian[0]
+    main = kept[0]
 
     description = scrub_personal_data(job["description"] or "")
     title = job["title"] or ""
@@ -119,9 +136,9 @@ def build_row(job: dict, board: dict, index: loc.LocationIndex, now: str, first_
         "title": title,
         "department": job["department"],
         **derived_fields(title, description, job["department"], job["employment_type"],
-                         job["salary_structured"], job["posted_at"], first_seen or now),
-        "workplace_type": workplace_type(job["workplace_type"], job["location"], description)
-                          or ("remote" if main["is_remote"] else None),
+                         job["salary_structured"], job["posted_at"], first_seen or now, main["country"]),
+        "workplace_ats": job["workplace_type"],
+        **workplace_fields(job["workplace_type"], job["location"], description, main["is_remote"], title),
         "location_raw": job["location"],
         "location_id": main["location_id"],
         "city": main["city"],
@@ -202,13 +219,19 @@ def crawl_board(conn, board: dict, index, max_jobs: int) -> dict:
 def reprocess(conn):
     """Recomputes the derived fields (function, seniority, contract, pay...) from the stored data,
     without downloading anything. Use it after improving the rules in lib/enrich.py or lib/salary.py."""
-    rows = conn.execute("SELECT job_key, title, department, description, salary_structured_json, "
-                        "workplace_type, location_raw, is_remote, posted_at, first_seen FROM jobs").fetchall()
+    rows = conn.execute("SELECT job_key, ats, title, department, description, salary_structured_json, "
+                        "workplace_type, workplace_ats, location_raw, is_remote, posted_at, first_seen, country FROM jobs").fetchall()
     for r in rows:
         title, description = r["title"] or "", r["description"] or ""
         structured = json.loads(r["salary_structured_json"]) if r["salary_structured_json"] else None
         update = derived_fields(title, description, r["department"], None, structured,
-                                r["posted_at"], r["first_seen"])
+                                r["posted_at"], r["first_seen"], r["country"])
+        # rows saved before workplace_ats existed: for the ATSs with a workplace field, the stored value
+        # is the best guess of what the ATS said (the next crawl replaces it with the real field)
+        ats_value = r["workplace_ats"]
+        if ats_value is None and r["ats"] in ATS_WITH_WORKPLACE_FIELD:
+            ats_value = r["workplace_type"]
+        update.update(workplace_fields(ats_value, r["location_raw"], description, r["is_remote"], title))
         sets = ", ".join(f"{k} = :{k}" for k in update)
         conn.execute(f"UPDATE jobs SET {sets} WHERE job_key = :job_key", {**update, "job_key": r["job_key"]})
         if is_open_application(title):      # not a job ad: drop it from the analysis
@@ -221,7 +244,7 @@ def main():
     p = argparse.ArgumentParser(description="Job ad crawler (Phase 2)")
     p.add_argument("--only", help="comma-separated companies (names as in the seed list)")
     p.add_argument("--max-jobs", type=int, default=DEFAULT_MAX_JOBS,
-                   help=f"max ads per board when each detail costs a request (default {DEFAULT_MAX_JOBS})")
+                   help=f"max ads per board and country when each detail costs a request (default {DEFAULT_MAX_JOBS})")
     p.add_argument("--cache", action="store_true", help="on-disk HTTP cache (development)")
     p.add_argument("--reprocess", action="store_true",
                    help="downloads nothing: recomputes the derived fields of the stored ads")
@@ -240,6 +263,16 @@ def main():
         FROM ats_registry r
         WHERE r.supported = 1 AND r.confidence IN ('high', 'medium') AND r.slug_or_url IS NOT NULL
         ORDER BY r.company""")]
+    # the same board under two companies (a group site, e.g. a subsidiary using the parent's career
+    # site) would count its ads twice: keep the first and say so, to be fixed in manual_overrides.csv
+    seen = {}
+    for b in list(boards):
+        key = b["slug_or_url"].strip().lower()
+        if key in seen:
+            print(f"WARNING: {b['company']} uses the same board as {seen[key]}: skipped ({b['slug_or_url']})")
+            boards.remove(b)
+        else:
+            seen[key] = b["company"]
     if args.only:
         wanted = {company_id_from_name(n) for n in args.only.split(",")}
         boards = [b for b in boards if b["company_id"] in wanted]
@@ -260,7 +293,7 @@ def main():
             totals[k] += res[k]
         pct = lambda n: f"{100 * n / res['kept']:.0f}%" if res["kept"] else "-"
         print(f"[{i}/{len(boards)}] {board['company']:<32} {board['ats']:<14} downloaded {res['downloaded']:>4}  "
-              f"in Italy {res['kept']:>4} (new {res['new']:>4})  with figure {pct(res['with_salary']):>4}  "
+              f"kept {res['kept']:>4} (new {res['new']:>4})  with figure {pct(res['with_salary']):>4}  "
               f"vague {pct(res['vague']):>4}  ({time.time() - t0:.0f}s, about {eta:.0f} min left)")
 
     k = totals["kept"]

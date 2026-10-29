@@ -16,7 +16,7 @@ from urllib.parse import unquote, urlparse
 import requests
 
 from lib import http
-from lib.locations import is_italy
+from lib.locations import in_scope, is_italy, scope_country
 from lib.text import clean_html
 
 # Keys present in every normalized job ad (None if the ATS does not provide them)
@@ -209,7 +209,8 @@ def workday_sites_from_robots(host: str, retries: int = 3) -> list[str]:
 
 
 def best_workday_site(host: str, sites: list[str]) -> str:
-    """Among several sites of the same tenant, picks the one with the most ads in Italy (then the most ads).
+    """Among several sites of the same tenant, picks the one with the most ads in the observed countries
+    (then the most ads).
 
     E.g. the first site listed is for UK temporary workers, the right one is the one for
     experienced professionals. It costs one light request per site.
@@ -222,10 +223,10 @@ def best_workday_site(host: str, sites: list[str]) -> str:
                                   {"appliedFacets": {}, "limit": 20, "offset": 0, "searchText": ""})
         except (requests.RequestException, ValueError):
             continue
-        italy = workday_italy_count(data.get("facets"))
-        if italy is None:   # no country filter: count the locations on the first page
-            italy = sum(is_italy(jp.get("locationsText")) for jp in data.get("jobPostings", []))
-        score = (italy, data.get("total", 0))
+        scope = workday_scope_count(data.get("facets"))
+        if scope is None:   # no country filter: count the locations on the first page
+            scope = sum(in_scope(jp.get("locationsText")) for jp in data.get("jobPostings", []))
+        score = (scope, data.get("total", 0))
         if score > best_score:
             best, best_score = site, score
     return best
@@ -263,45 +264,58 @@ def _workday_base(career_url: str):
     return host, tenant, site, f"https://{host}/wday/cxs/{tenant}/{site}"
 
 
-def workday_italy_count(facets: list):
-    """Looks for 'Italy'/'Italia' in Workday's filters (facets) and returns its count."""
-    counts = []
+def workday_country_counts(facets: list) -> dict:
+    """Counts of the observed countries in Workday's filters (facets): {'IT': 12, 'DE': 30, ...}.
+    A country can appear in several filters (country, location): the largest count is kept."""
+    counts = {}
 
     def walk(nodes):
         for node in nodes or []:
-            descriptor = str(node.get("descriptor", "")).strip().lower()
-            if descriptor in ("italy", "italia") and "count" in node:
-                counts.append(node["count"])
+            cc = scope_country(None, str(node.get("descriptor", "")).strip())
+            if cc and "count" in node:
+                counts[cc] = max(counts.get(cc, 0), node["count"])
             walk(node.get("values"))
 
     walk(facets)
-    return max(counts) if counts else None
+    return counts
 
 
-def workday_italy_facet(facets: list):
-    """Workday filter for Italy, to pass as appliedFacets: {"locationCountry": ["<id>"]}.
+def workday_italy_count(facets: list):
+    """Count of 'Italy'/'Italia' in Workday's filters (facets), None if the site has no such filter."""
+    return workday_country_counts(facets).get("IT")
+
+
+def workday_scope_count(facets: list):
+    """Ads in the observed countries according to Workday's filters, None if there is no country filter."""
+    counts = workday_country_counts(facets)
+    return sum(counts.values()) if counts else None
+
+
+def workday_scope_facet(facets: list):
+    """Workday filter for the observed countries, to pass as appliedFacets: {"locationCountry": ["<id>", ...]}.
 
     None if the site has no country filter (then the location text is filtered instead).
     """
-    found = []
+    found = {}
 
     def walk(nodes, parent_param):
         for node in nodes or []:
             param = node.get("facetParameter") or parent_param
-            descriptor = str(node.get("descriptor", "")).strip().lower()
-            if descriptor in ("italy", "italia") and node.get("id") and param:
-                found.append((node.get("count", 0), param, node["id"]))
+            cc = scope_country(None, str(node.get("descriptor", "")).strip())
+            if cc and node.get("id") and param:
+                found.setdefault(param, []).append((node.get("count", 0), node["id"]))
             walk(node.get("values"), param)
 
     walk(facets, None)
     if not found:
         return None
-    _, param, value_id = max(found)
-    return {param: [value_id]}
+    # the filter that covers the most ads (usually the country filter)
+    param, values = max(found.items(), key=lambda kv: sum(c for c, _ in kv[1]))
+    return {param: [value_id for _, value_id in values]}
 
 
 def workday_summary(career_url: str, n_details: int = 2) -> dict:
-    """First page of the Workday board: total ads, ads in Italy, a few texts.
+    """First page of the Workday board: total ads, ads in Italy and in all observed countries, a few texts.
 
     Used during discovery: it costs 1 + n_details requests instead of downloading everything.
     """
@@ -318,8 +332,11 @@ def workday_summary(career_url: str, n_details: int = 2) -> dict:
             pass
     total = data.get("total", 0)
     italy = workday_italy_count(data.get("facets"))
+    scope = workday_scope_count(data.get("facets"))
+    if scope is not None and italy is None:
+        italy = 0     # the country filter exists and Italy is not in it
     italy_estimated = False
-    if italy is None and total:
+    if scope is None and total:
         # No "country" filter: count the Italian locations in the list,
         # at most 10 pages (200 ads). Beyond that, estimate proportionally.
         locations = [jp.get("locationsText") for jp in postings]
@@ -332,56 +349,74 @@ def workday_summary(career_url: str, n_details: int = 2) -> dict:
             locations += [jp.get("locationsText") for jp in page["jobPostings"]]
             offset += 20
         n_italy = sum(is_italy(loc) for loc in locations)
+        n_scope = sum(in_scope(loc) for loc in locations)
         if len(locations) >= total:
-            italy = n_italy
+            italy, scope = n_italy, n_scope
         elif locations:
             italy = round(n_italy / len(locations) * total)
+            scope = round(n_scope / len(locations) * total)
             italy_estimated = True
     return {
         "url": workday_board_url(host, tenant, site),
         "total": total,
         "italy": italy,
+        "scope": scope,
         "italy_estimated": italy_estimated,
         "texts": texts,
     }
 
 
 def fetch_workday(career_url: str, max_jobs: int = None, location_regex: str = None,
-                  search: str = "", italy_only: bool = False):
-    """italy_only=True: uses Workday's country filter if present, otherwise keeps Italian locations
-    and multiple ones ("3 Locations"), to be checked in the detail."""
+                  search: str = "", scope_only: bool = False):
+    """scope_only=True: uses Workday's country filter (the observed countries) if present, otherwise keeps
+    locations in those countries and multiple ones ("3 Locations"), to be checked in the detail."""
     host, tenant, site, base = _workday_base(career_url)
     loc_re = re.compile(location_regex, re.IGNORECASE) if location_regex else None
     facets = {}
-    if italy_only:
+    if scope_only:
         first = http.post_json(f"{base}/jobs", {"appliedFacets": {}, "limit": 1, "offset": 0, "searchText": search})
-        facets = workday_italy_facet(first.get("facets")) or {}
+        facets = workday_scope_facet(first.get("facets")) or {}
         if not facets:
-            multi = re.compile(r"^\d+ (?:locations|sedi|località)$", re.IGNORECASE)
-            keep = lambda text: is_italy(text) or bool(multi.match(text or ""))
+            multi = re.compile(r"^\d+ (?:locations|sedi|località|standorte|lieux|locaties)$", re.IGNORECASE)
+            keep = lambda text: in_scope(text) or bool(multi.match(text or ""))
 
-    # 1) Job list, paginated (Workday returns at most 20 results per call)
-    postings, offset, total = [], 0, None
-    while max_jobs is None or len(postings) < max_jobs:
-        data = http.post_json(f"{base}/jobs", {"appliedFacets": facets, "limit": 20,
-                                               "offset": offset, "searchText": search})
-        if total is None:
-            total = data.get("total", 0)
-        page = data.get("jobPostings", [])
-        if not page:
-            break
-        for jp in page:
-            text = jp.get("locationsText") or ""
-            if loc_re and not loc_re.search(text):
-                continue
-            if italy_only and not facets and not keep(text):
-                continue
-            postings.append(jp)
-        offset += 20
-        if offset >= total:
-            break
-    if max_jobs is not None:
-        postings = postings[:max_jobs]
+    # 1) Job list, paginated (Workday returns at most 20 results per call).
+    # With the country filter the cap applies to each country separately: on a global site the
+    # ads of one country (e.g. 1,200 in France) must not crowd out those of another (Italy).
+    totals = []    # ads on the site for each filter value (in the returned metadata)
+
+    def list_postings(applied: dict) -> list:
+        postings, offset, total = [], 0, None
+        while max_jobs is None or len(postings) < max_jobs:
+            data = http.post_json(f"{base}/jobs", {"appliedFacets": applied, "limit": 20,
+                                                   "offset": offset, "searchText": search})
+            if total is None:
+                total = data.get("total", 0)
+                totals.append(total)
+            page = data.get("jobPostings", [])
+            if not page:
+                break
+            for jp in page:
+                text = jp.get("locationsText") or ""
+                if loc_re and not loc_re.search(text):
+                    continue
+                if scope_only and not facets and not keep(text):
+                    continue
+                postings.append(jp)
+            offset += 20
+            if offset >= total:
+                break
+        return postings if max_jobs is None else postings[:max_jobs]
+
+    if facets:
+        (param, values), = facets.items()
+        postings = {}
+        for value in values:
+            for jp in list_postings({param: [value]}):
+                postings.setdefault(jp.get("externalPath"), jp)   # an ad in two countries: once
+        postings = list(postings.values())
+    else:
+        postings = list_postings({})
 
     # 2) Detail of each ad (one call is needed to get the full description)
     jobs = []
@@ -409,7 +444,7 @@ def fetch_workday(career_url: str, max_jobs: int = None, location_regex: str = N
             description=clean_html(info.get("jobDescription", "")),
             salary_structured=None,   # Workday exposes no standard structured salary
         ))
-    return jobs, {"instance": None, "board_name": None, "total": total,
+    return jobs, {"instance": None, "board_name": None, "total": sum(totals),
                   "url": workday_board_url(host, tenant, site)}
 
 
@@ -560,14 +595,20 @@ def _oracle_site(url: str) -> tuple[str, str]:
     raise ValueError(f"Oracle site not found on {host}")
 
 
+def _oracle_countries(req: dict) -> list:
+    return [req.get("PrimaryLocationCountry")] + [s.get("CountryCode") for s in req.get("secondaryLocations") or []]
+
+
 def _oracle_is_italy(req: dict) -> bool:
-    countries = [req.get("PrimaryLocationCountry")] + \
-        [s.get("CountryCode") for s in req.get("secondaryLocations") or []]
-    return any(is_italy(None, c) for c in countries) or is_italy(req.get("PrimaryLocation"))
+    return any(is_italy(None, c) for c in _oracle_countries(req)) or is_italy(req.get("PrimaryLocation"))
+
+
+def _oracle_in_scope(req: dict) -> bool:
+    return any(in_scope(None, c) for c in _oracle_countries(req)) or in_scope(req.get("PrimaryLocation"))
 
 
 def oracle_summary(url: str, max_pages: int = 8) -> dict:
-    """Total ads and ads in Italy (exact up to max_pages*25 ads, estimated beyond)."""
+    """Total ads, ads in Italy and in the observed countries (exact up to max_pages*25 ads, estimated beyond)."""
     host, site = _oracle_site(url)
     first = _oracle_page(host, site, 0)
     total = first.get("TotalJobsCount") or 0
@@ -577,13 +618,15 @@ def oracle_summary(url: str, max_pages: int = 8) -> dict:
         reqs += _oracle_page(host, site, offset).get("requisitionList") or []
         offset += ORACLE_PAGE
     n_italy = sum(_oracle_is_italy(r) for r in reqs)
+    n_scope = sum(_oracle_in_scope(r) for r in reqs)
     estimated = bool(reqs) and len(reqs) < total
     italy = round(n_italy / len(reqs) * total) if estimated else n_italy
-    return {"url": oracle_board_url(host, site), "total": total, "italy": italy,
+    scope = round(n_scope / len(reqs) * total) if estimated else n_scope
+    return {"url": oracle_board_url(host, site), "total": total, "italy": italy, "scope": scope,
             "italy_estimated": estimated, "texts": [r.get("Title", "") for r in reqs[:25]]}
 
 
-def fetch_oracle(url: str, instance: str = None, details: bool = True, italy_only: bool = False):
+def fetch_oracle(url: str, instance: str = None, details: bool = True, scope_only: bool = False):
     host, site = _oracle_site(url)
     reqs, offset, total = [], 0, None
     while total is None or offset < total:
@@ -594,8 +637,8 @@ def fetch_oracle(url: str, instance: str = None, details: bool = True, italy_onl
             break
         reqs += batch
         offset += ORACLE_PAGE
-    if italy_only:   # the detail costs one request: only for Italian ads
-        reqs = [r for r in reqs if _oracle_is_italy(r)]
+    if scope_only:   # the detail costs one request: only for ads in the observed countries
+        reqs = [r for r in reqs if _oracle_in_scope(r)]
 
     jobs = []
     for r in reqs:
@@ -728,8 +771,9 @@ def parse_sf_job_page(page: str, url: str = "") -> dict:
         m = re.search(rf'<meta\s+itemprop="{prop}"\s+content="([^"]*)"', page)
         return html.unescape(m.group(1)).strip() or None if m else None
     title = re.search(r'itemprop="title"[^>]*>(.*?)</span>', page, re.S)
-    desc = re.search(r'itemprop="description"[^>]*>(.*?)(?:<div[^>]*class="[^"]*(?:applylink|job-apply|jobFooter)|</article>|$)',
-                     page, re.S)
+    if not title:   # some sites leave the title out of the microdata: the page's own og:title has it
+        title = re.search(r'<meta\s+property="og:title"\s+content="([^"]*)"', page)
+    desc = element_inner_html(page, 'itemprop="description"')
     posted = meta("datePosted")
     if posted:
         try:
@@ -749,12 +793,36 @@ def parse_sf_job_page(page: str, url: str = "") -> dict:
         "posted_at": posted,
         "employment_type": meta("employmentType"),
         "company": meta("hiringOrganization"),
-        "description": clean_html(desc.group(1))[:20000] if desc else "",
+        "description": clean_html(desc)[:20000] if desc else "",
     }
 
 
+def element_inner_html(page: str, attribute: str) -> str | None:
+    """Inner HTML of the first element carrying `attribute`, up to ITS closing tag (nested tags counted).
+
+    A regex up to a guessed end marker ran on into the rest of the page (buttons, JSON, scripts)
+    on the sites where that marker is missing.
+    """
+    start = page.find(attribute)
+    if start < 0:
+        return None
+    open_at = page.rfind("<", 0, start)
+    tag = re.match(r"<(\w+)", page[open_at:]).group(1).lower()
+    body_start = page.find(">", start) + 1
+    depth = 1
+    tag_re = re.compile(rf"<(/?){tag}\b[^>]*?(/?)>", re.IGNORECASE)
+    for m in tag_re.finditer(page, body_start):
+        if m.group(2):          # self-closing <tag/>
+            continue
+        depth += -1 if m.group(1) else 1
+        if depth == 0:
+            return page[body_start:m.start()]
+    return page[body_start:]    # never closed: keep the rest, as before
+
+
 def successfactors_summary(site_url: str, sample: int = 8) -> dict:
-    """Total ads (from the sitemap) and an estimate of those in Italy from a sample of pages."""
+    """Total ads (from the sitemap) and an estimate of those in Italy and in the observed countries,
+    from a sample of pages."""
     urls = sf_job_urls(site_url)
     if not urls:
         raise ValueError(f"no job ads in the sitemap of {sf_root(site_url)}")
@@ -768,21 +836,32 @@ def successfactors_summary(site_url: str, sample: int = 8) -> dict:
         except (requests.RequestException, http.RobotsDisallowed):
             continue
     n_italy = sum(is_italy(p["location"], p["country"]) for p in pages)
+    n_scope = sum(in_scope(p["location"], p["country"]) for p in pages)
     estimated = len(pages) < len(urls)
     italy = round(n_italy / len(pages) * len(urls)) if pages and estimated else n_italy
+    scope = round(n_scope / len(pages) * len(urls)) if pages and estimated else n_scope
     return {"url": sf_root(site_url), "total": len(urls), "italy": italy if pages else None,
+            "scope": scope if pages else None,
             "italy_estimated": estimated,
             "texts": [f"{p['company'] or ''} {p['title'] or ''} {p['description'][:2000]}" for p in pages]}
 
 
 def fetch_successfactors(site_url: str, instance: str = None, max_jobs: int = None,
-                         italy_only: bool = False):
+                         scope_only: bool = False):
     urls = sf_job_urls(site_url)
-    if italy_only:
-        # the location is almost always in the URL (/job/Milano-Data-Analyst/123/): download only Italian ones.
-        # If no URL contains a recognizable location, download all of them (up to max_jobs) and filter later.
-        italian = [u for u in urls if is_italy(unquote(u.split("/job/", 1)[-1]).replace("-", " "))]
-        urls = italian or urls
+    if scope_only:
+        # the location is almost always in the URL (/job/Milano-Data-Analyst/123/): download only the ads in
+        # the observed countries. If no URL has a recognizable location, download all (up to max_jobs) and filter later.
+        kept = [u for u in urls if in_scope(unquote(u.split("/job/", 1)[-1]).replace("-", " "))]
+        if kept and max_jobs:
+            # the cap applies to each country separately (see fetch_workday)
+            by_country = {}
+            for u in kept:
+                cc = scope_country(unquote(u.split("/job/", 1)[-1]).replace("-", " "))
+                by_country.setdefault(cc, []).append(u)
+            kept = [u for country_urls in by_country.values() for u in country_urls[:max_jobs]]
+            max_jobs = None
+        urls = kept or urls
     jobs = []
     for u in urls[:max_jobs]:
         try:
@@ -826,5 +905,15 @@ def count_italy(jobs: list) -> int:
     for j in jobs:
         places = [j["location"]] + list(j["locations_all"] or [])
         if is_italy(None, j["country"]) or any(is_italy(p) for p in places):
+            n += 1
+    return n
+
+
+def count_scope(jobs: list) -> int:
+    """Job ads with at least one location in the observed countries."""
+    n = 0
+    for j in jobs:
+        places = [j["location"]] + list(j["locations_all"] or [])
+        if in_scope(None, j["country"]) or any(in_scope(p) for p in places):
             n += 1
     return n

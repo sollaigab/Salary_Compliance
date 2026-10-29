@@ -180,6 +180,16 @@ def test_successfactors_microdata():
         ("Data Analyst", "Parma, IT", "IT", "2026-09-17", "Acme Foods")
 
 
+def test_successfactors_description_stops_at_its_element():
+    page = ('<meta property="og:title" content="Addetti/e Vendita Mantova">'
+            '<span itemprop="description"><span class="jobdescription"><div>Le tue mansioni</div>'
+            '<span>Vendita assistita</span></span></span>'
+            '<div class="footer">Salva job alert</div><script>{"labelLogIn": "Effettua il login"}</script>')
+    p = parse_sf_job_page(page)
+    assert p["title"] == "Addetti/e Vendita Mantova"
+    assert p["description"] == "Le tue mansioni Vendita assistita"
+
+
 def test_successfactors_location_from_url():
     p = parse_sf_job_page('<span itemprop="title">Addetto vendita</span>',
                           "https://jobs.example.it/job/Lombardia-Addetto-Mantova/1170132601/")
@@ -215,6 +225,7 @@ def test_normalize_locations():
     assert idx.normalize("Sesto San Giovanni (MI)")["city"] == "Sesto San Giovanni"
     assert idx.normalize("Remote - Italy")["location_id"] == "IT-REMOTE"
     assert idx.normalize("Remote, EMEA")["location_id"] == "EU-REMOTE"
+    assert idx.normalize("Anywhere in Québec")["location_id"] is None
     assert idx.normalize("London, United Kingdom", "GB")["location_id"] is None
     assert idx.normalize("Lombardy")["location_id"] == "IT-REG-03"
 
@@ -233,6 +244,52 @@ def test_seniority_function_contract():
     assert enrich.contract_type(None, "Operaio", "sostituzione di tubazioni stradali") is None
     assert enrich.contract_type(None, "Impiegata", "contratto di sostituzione maternità") == "fixed_term"
     assert enrich.work_schedule(None, "Cassiere part time", "") == "part_time"
+
+
+def test_workplace_from_text():
+    wp = lambda text, ats=None: enrich.workplace_with_source(ats, "", text)
+    # the ATS field wins
+    assert wp("smart working", "On-site") == ("onsite", "ats")
+    # explicit labels
+    assert wp("Modalità di lavoro: ibrida. Categoria contrattuale: impiegato") == ("hybrid", "text")
+    assert wp("Modalità di lavoro: in sede. Il profilo ricercato") == ("onsite", "text")
+    assert wp("Contract type: Permanent. Hybrid Working: Onsite") == ("onsite", "text")
+    assert wp("Work mode: on site. Applicable collective agreement") == ("onsite", "text")
+    # wording
+    assert wp("Fully remote role, work from anywhere in Italy") == ("remote", "text")
+    assert wp("Possibilità di smart working fino a 8 giorni al mese") == ("hybrid", "text")
+    assert wp("The opportunity to work 6 days per month remotely") == ("hybrid", "text")
+    assert wp("We work in a hybrid model with autonomy over when to be in the office") == ("hybrid", "text")
+    assert wp("Lavoro su turni rotativi anche nel weekend") == ("onsite", "text")
+    # not about where you work
+    assert wp("le decisioni in sede di assunzione vengono prese") == (None, None)
+    assert wp("in presenza di esperienza professionale pregressa") == (None, None)
+    assert wp("Accesso alla mensa aziendale onsite e al nostro onsite shop") == (None, None)
+    assert wp("Esperienza con architetture ibride e hybrid cloud") == (None, None)
+
+
+def test_workplace_from_onsite_role():
+    wp = lambda title, text="", ats=None: enrich.workplace_with_source(ats, "", text, title)
+    # jobs that can only be done in person, when nothing else is stated
+    for title in ["Addetti/e Vendita Lecce", "Commis di Sala (part-time 24 h)", "Audioprotesista Udine (UD)",
+                  "Operatore/Operatrice Reti Idriche - Misano (RN)", "Manutentore Elettrico", "Tecnico di rete - Lombardia",
+                  "Warehouse Specialist, Fontevivo - Temporary", "Sales Assistant - Milan", "Lavapiatti"]:
+        assert wp(title) == ("onsite", "role"), title
+    # what the ad says wins over the title
+    assert wp("Receptionist", "Possibilità di smart working 2 giorni a settimana") == ("hybrid", "text")
+    # office jobs with similar words
+    for title in ["Coordinatore di commessa - Pubblica Amministrazione", "Salesforce Field Service Developer",
+                  "Operatore/Operatrice di Succursale Private Banking", "Analista sistemi idraulici e carburante",
+                  "Professional Ufficio Tecnico Impianti", "Data Analyst"]:
+        assert wp(title) == (None, None), title
+
+
+def test_micro_sectors_have_label_and_nace_division():
+    from lib.labels import MICRO_SECTOR
+    for code, (label, nace) in MICRO_SECTOR.items():
+        assert label and len(nace) == 2 and nace.isdigit(), code
+    labels = [label for label, _ in MICRO_SECTOR.values()]
+    assert len(labels) == len(set(labels))
 
 
 def test_privacy_email_phone():
@@ -384,6 +441,32 @@ def test_salary_medians_protected():
     assert lomb["ral_min_median"] is None and lomb["n_jobs"] == 100
 
 
+def _seg(companies, dim="region", value="Lombardia", **filters):
+    n = sum(companies.values())
+    return {"period": "post_law", "country": "all", "macro": "all", "function": "all", "workplace": "all", **filters,
+            "dim": dim, "value": value, "n_jobs": n, "n_companies": len(companies),
+            "top_share": max(companies.values()) / n, "n_ral": 0, "n_ral_companies": 0, "ral_top_share": 1.0,
+            "ral_min_median": None, "ral_max_median": None, "_companies": dict(companies)}
+
+
+def test_difference_between_filters():
+    big = {"a": 10, "b": 10, "c": 10, "d": 10}
+    # finance minus finance+data = 3 ads of one company: the filtered cell is hidden
+    parent = _seg({**big, "e": 3}, macro="finance")
+    child = _seg(big, macro="finance", function="data")
+    out = disclosure.apply_rules([parent, child])
+    assert [c["function"] for c in out] == ["all"]
+    # a large difference is fine, and so is no difference at all
+    other = {"x": 10, "y": 10, "z": 10}
+    out = disclosure.apply_rules([_seg({**big, **other}, macro="finance"),
+                                  _seg(big, macro="finance", function="data")])
+    assert len(out) == 2 and "_companies" not in out[0]
+    assert len(disclosure.apply_rules([_seg(big, macro="finance"), _seg(big, macro="finance", function="data")])) == 2
+    # for the period the post-law cell is kept and the cell over all ads is hidden
+    out = disclosure.apply_rules([_seg({**big, "e": 3}, period="all"), _seg(big)])
+    assert [c["period"] for c in out] == ["post_law"]
+
+
 def test_seniority_practice_and_grade():
     # "CFO Services" is a consulting practice, not a CFO role
     assert enrich.seniority("CFO Services - Consulente in ambito Finance Transformation - Senior Consultant") == "senior"
@@ -415,3 +498,84 @@ def test_seniority_with_source():
     assert enrich.seniority_with_source("Data Analyst", "almeno 6 anni di esperienza") == ("senior", "experience", 6)
     assert enrich.seniority_with_source("Senior Data Analyst", "1 anno di esperienza")[:2] == ("senior", "title")
     assert enrich.seniority_with_source("Data Analyst", "Ottimo team") == ("mid", "not_stated", None)
+
+
+def test_job_function_titles():
+    cases = {
+        "Addetti/e Vendita Mantova": "retail", "Addette/i vendita Bookshop": "retail",
+        "Assistente Giuntista Cavi": "operations", "Bid Management Specialist": "legal",
+        "Gestore Small Business - Verona": "sales", "Martech Specialist": "marketing",
+        "Responsabile Amministrazione del Personale": "hr", "Psichiatra online": "healthcare",
+        "Sustainability Specialist Internship": "strategy",
+        # the broad words do not override a clearer function
+        "Change Management Consultant": "consulting", "Data Analyst": "data",
+    }
+    for title, function in cases.items():
+        assert enrich.job_function(title) == function, title
+
+
+# ---------- Germany, the Netherlands, France ----------
+from lib import locations as loc
+from lib import salary
+
+
+def test_scope_country():
+    assert loc.scope_country("Munich, Bavaria") == "DE"
+    assert loc.scope_country(None, "NLD") == "NL"
+    assert loc.scope_country("Paris La Défense") == "FR"
+    assert loc.scope_country("Milan, Lombardy") == "IT"
+    assert loc.scope_country("London, United Kingdom") is None
+    assert loc.in_scope("Remote - Netherlands") and not loc.in_scope("Madrid, Spain")
+
+
+def test_foreign_pay_text():
+    def p(text):
+        s = salary.parse_salary(text)
+        return s and (s["min"], s["max"], s["period"], s["gross_net"])
+    assert p("Jahresgehalt: 55.000 € – 65.000 € brutto") == (55000, 65000, "year", "gross")
+    # "3 Jahre Erfahrung" (years of experience) does not make a monthly figure annual
+    assert p("Das Gehalt liegt zwischen 4.200 und 5.000 Euro brutto monatlich, 3 Jahre Erfahrung") == (4200, 5000, "month", "gross")
+    assert p("Rémunération : 45 000 € - 52 000 € bruts annuels") == (45000, 52000, "year", "gross")
+    assert p("€ 3.500 - € 4.500 bruto per maand") == (3500, 4500, "month", "gross")
+    assert p("Fahrtkostenzuschuss 50 € pro Monat") is None          # a benefit, not pay
+    assert p("ein Umsatz von 3,5 Mrd. Euro") is None                 # company revenue
+    assert p("and have reached €800M+ in ARR") is None               # company revenue, in millions
+    assert p("Mitarbeiter werben Mitarbeiter: bis zu 5.000 € Prämie") is None   # referral bonus
+    assert p("You'll receive a €100 Catavoucher when you join") is None      # a voucher
+    assert p("la valeur 360° que nous créons") is None                     # "valeur" is not EUR
+    assert p("eine Springerzulage von bis zu 1.000€ brutto") is None       # an allowance on top of pay
+    assert p("see https://app.notion.com/p/Compensation-Alan-9a9fcf8b0cdf") is None   # a link
+    assert p("Stagevergoeding van €500 per maand") == (500, 500, "month", None)
+    # multi-country pay table: the band of the ad's country
+    table = "Salaribereik: Czechia: 1,224,000.00 CZK | Greece: 51,920.00 EUR - 77,880.00 EUR | Italy: 61,600.00 EUR - 92,400.00 EUR"
+    s = salary.parse_salary(table, "IT")
+    assert (s["min"], s["max"], s["period"]) == (61600, 92400, "year")
+    # multi-country pay table: the figure in another currency is skipped
+    assert p("Gehaltsband: Czechia: 1,224,000.00 CZK; Italy: 51,920.00 EUR - 77,880.00 EUR") == (51920, 77880, "year", None)
+    for vague in ("Wir bieten eine attraktive Vergütung", "Vergütung nach Tarifvertrag",
+                  "Salaire selon profil", "Marktconform salaris"):
+        assert salary.is_vague(vague), vague
+
+
+def test_monthly_payments_by_country():
+    text = "Gehalt 4.500 € brutto monatlich"
+    assert enrich.salary_fields(None, text, country="DE")["ral_min_annual"] == 54000      # x 12
+    assert enrich.salary_fields(None, "Stipendio 2.000 euro lordi mensili")["ral_min_annual"] == 28000   # x 14
+
+
+def test_foreign_titles():
+    def f(title):
+        return enrich.job_function(title), enrich.seniority(title), enrich.contract_type(None, title, "")
+    assert f("Senior Softwareentwickler (m/w/d)") == ("engineering", "senior", None)
+    assert f("Werkstudent Marketing (m/w/d)") == ("marketing", "intern", "internship")
+    assert f("Teamleiter Kundenservice (m/w/d)") == ("customer_service", "manager", None)
+    assert f("Chef de projet SI H/F")[0] == "project_management"       # a project manager, not a cook
+    assert f("Chef de Partie - Hotel")[:2] == ("hospitality", "mid")
+    assert enrich.job_function("Assistenza Clienti") == "customer_service"   # Italian "assistenza" is not German
+    assert enrich.contract_type(None, "Engineer (m/w/d) - unbefristet", "") == "permanent"
+    # acronyms and requirements that are not the contract
+    assert enrich.contract_type(None, "Analyst", "processi KYC, CDD ed EDD") is None
+    assert enrich.contract_type(None, "Kaufmann", "Sie haben eine abgeschlossene Ausbildung zum Industriekaufmann") is None
+    assert enrich.workplace_with_source(None, "", "Wir bieten mobiles Arbeiten an 2 Tagen") == ("hybrid", "text")
+    assert enrich.workplace_with_source(None, "", "", "Verkäufer (m/w/d)") == ("onsite", "role")
+    assert enrich.description_lang("Wir suchen für unser Team eine Person mit Erfahrung und sie ist bei uns auf") == "de"

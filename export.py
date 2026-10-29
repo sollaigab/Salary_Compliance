@@ -23,6 +23,7 @@ import sys
 import duckdb
 
 from lib import db, disclosure, labels
+from lib.locations import COUNTRY_NAMES
 
 EXPORT_DIR = db.ROOT / "data" / "export"
 PUBLIC_DIR = db.ROOT / "webapp" / "data"   # publishable data: the web app reads it from here
@@ -56,16 +57,24 @@ def export_duckdb():
     print("  try:  duckdb data/export/observatory.duckdb \"SELECT sector, COUNT(*) FROM jobs_public GROUP BY 1\"")
 
 
-# Published dimensions: each cell is period x macro-sector x ONE of these dimensions
-PUBLIC_DIMS = ["region", "job_function", "seniority", "contract_type", "workplace_type"]
+# Published dimensions: each cell is a filter combination x ONE of these dimensions
+PUBLIC_DIMS = ["country", "macro_sector", "region", "job_function", "seniority", "contract_type", "workplace_type"]
+# Filters on the page: each one a value or 'all'. The dimension a filter fixes is not broken down
+# under that filter (with function = data, the function chart has a single bar).
+FILTERS = {"country": "country", "macro": "macro_sector", "function": "job_function", "workplace": "workplace_type"}
+WORKPLACE_FILTER_VALUES = ["onsite", "hybrid", "remote"]
+COUNTRY_CODES = {name: code for code, name in COUNTRY_NAMES.items()}    # "Germany" -> "DE"
 
 
 def public_cells(con) -> list[dict]:
-    """All aggregate cells (before the protection rules), computed in DuckDB."""
-    macro_case = "CASE " + " ".join(f"WHEN c.sector = '{s}' THEN '{m}'" for s, m in labels.MACRO_OF_SECTOR.items()) \
-                 + " ELSE 'other' END"
-    con.execute(f"""CREATE OR REPLACE TABLE base AS
-        SELECT j.company_id, {macro_case} AS macro_sector, j.posting_period,
+    """All aggregate cells (before the protection rules): every filter combination x every dimension."""
+    import itertools
+    import statistics
+    from collections import Counter, defaultdict
+
+    macro_case = "CASE " + " ".join(f"WHEN c.sector = '{s}' THEN '{m}'" for s, m in labels.MACRO_OF_SECTOR.items())                  + " ELSE 'other' END"
+    jobs = con.execute(f"""
+        SELECT j.company_id, j.country, {macro_case} AS macro_sector, j.posting_period,
                COALESCE(l.region, CASE WHEN j.is_remote = 1 THEN 'Remote' ELSE 'Unspecified' END) AS region,
                j.job_function,
                CASE WHEN j.seniority_source = 'not_stated' THEN NULL ELSE j.seniority END AS seniority,
@@ -73,52 +82,54 @@ def public_cells(con) -> list[dict]:
                j.salary_transparency, j.ral_min_annual, j.ral_max_annual
         FROM src.jobs j JOIN src.companies c ON c.company_id = j.company_id
         LEFT JOIN src.locations l ON l.location_id = j.location_id
-        WHERE j.is_active = 1""")
+        WHERE j.is_active = 1
+          AND j.country IS NOT NULL   -- remote anywhere in Europe: too few ads, their country row would hide another
+        """).fetchdf().to_dict("records")
 
-    def cells_for(period, macro, dim):
-        where = ["TRUE"]
-        if period == "post_law":
-            where.append("posting_period = 'post_law'")
-        if macro != "all":
-            where.append(f"macro_sector = '{macro}'")
-        value = "'all'" if dim == "total" else f"COALESCE({dim}, 'not_stated')"
-        rows = con.execute(f"""
-            WITH t AS (SELECT *, {value} AS value FROM base WHERE {' AND '.join(where)}),
-                 per_company AS (SELECT value, company_id, COUNT(*) AS n,
-                                        COUNT(ral_min_annual) AS n_ral FROM t GROUP BY ALL)
-            SELECT t.value, COUNT(*) AS n_jobs, COUNT(DISTINCT t.company_id) AS n_companies,
-                   COUNT(*) FILTER (WHERE salary_transparency = 'figure') AS n_with_salary,
-                   COUNT(*) FILTER (WHERE salary_transparency = 'vague') AS n_vague,
-                   COUNT(ral_min_annual) AS n_ral,
-                   COUNT(DISTINCT t.company_id) FILTER (WHERE ral_min_annual IS NOT NULL) AS n_ral_companies,
-                   MEDIAN(ral_min_annual) AS ral_min_median, MEDIAN(ral_max_annual) AS ral_max_median,
-                   (SELECT MAX(n) FROM per_company p WHERE p.value = t.value) AS top_n,
-                   (SELECT MAX(n_ral) FROM per_company p WHERE p.value = t.value) AS top_ral
-            FROM t GROUP BY t.value""").fetchall()
-        out = []
-        for (value, n_jobs, n_comp, n_sal, n_vague, n_ral, n_ral_comp, lo, hi, top_n, top_ral) in rows:
-            out.append({
-                "period": period, "macro": macro, "dim": dim, "value": value,
-                "n_jobs": n_jobs, "n_companies": n_comp,
-                "pct_with_salary": round(100 * n_sal / n_jobs, 1), "pct_vague": round(100 * n_vague / n_jobs, 1),
-                "n_ral": n_ral, "ral_min_median": round(lo, -2) if lo is not None else None,
-                "ral_max_median": round(hi, -2) if hi is not None else None,
-                "top_share": top_n / n_jobs, "n_ral_companies": n_ral_comp,
-                "ral_top_share": (top_ral / n_ral) if n_ral else 1.0,
-            })
-        return out
+    groups = defaultdict(list)   # (period, country, macro, function, workplace, dim, value) -> jobs
+    for j in jobs:
+        j = {k: (None if v != v else v) for k, v in j.items()}   # NaN from pandas -> None
+        j["country"] = COUNTRY_CODES[j["country"]]
+        options = {
+            "period": ["all", "post_law"] if j["posting_period"] == "post_law" else ["all"],
+            "country": ["all", j["country"]],
+            "macro": ["all", j["macro_sector"]],
+            "function": ["all", j["job_function"]],
+            "workplace": ["all"] + ([j["workplace_type"]] if j["workplace_type"] in WORKPLACE_FILTER_VALUES else []),
+        }
+        for combo in itertools.product(*options.values()):
+            seg = dict(zip(options, combo))
+            dims = ["total"] + [d for d in PUBLIC_DIMS
+                                if not any(seg[f] != "all" and d == fd for f, fd in FILTERS.items())]
+            if seg["period"] == "all":
+                dims.append("posting_period")   # before/after the law: only on all ads
+            for dim in dims:
+                value = "all" if dim == "total" else (j[dim] or "not_stated")
+                groups[(*combo, dim, value)].append(j)
 
     cells = []
-    for period in ("post_law", "all"):
-        cells += cells_for(period, "all", "macro_sector")
-        for macro in ["all", *labels.MACRO_SECTOR]:
-            cells += cells_for(period, macro, "total")
-            for dim in PUBLIC_DIMS:
-                cells += cells_for(period, macro, dim)
-        # before/after the law: only meaningful on the "all" period
-        if period == "all":
-            for macro in ["all", *labels.MACRO_SECTOR]:
-                cells += cells_for(period, macro, "posting_period")
+    for (period, country, macro, function, workplace, dim, value), rows in groups.items():
+        n = len(rows)
+        companies = Counter(r["company_id"] for r in rows)
+        with_ral = [r for r in rows if r["ral_min_annual"] is not None]
+        ral_companies = Counter(r["company_id"] for r in with_ral)
+        # like SQL MEDIAN: each bound over the ads that have it
+        mins = [r["ral_min_annual"] for r in with_ral]
+        maxs = [r["ral_max_annual"] for r in with_ral if r["ral_max_annual"] is not None]
+        lo = statistics.median(mins) if mins else None
+        hi = statistics.median(maxs) if maxs else None
+        cells.append({
+            "period": period, "country": country, "macro": macro, "function": function, "workplace": workplace,
+            "dim": dim, "value": value, "n_jobs": n, "n_companies": len(companies),
+            "pct_with_salary": round(100 * sum(r["salary_transparency"] == "figure" for r in rows) / n, 1),
+            "pct_vague": round(100 * sum(r["salary_transparency"] == "vague" for r in rows) / n, 1),
+            "n_ral": len(with_ral),
+            "ral_min_median": round(lo, -2) if lo is not None else None,
+            "ral_max_median": round(hi, -2) if hi is not None else None,
+            "top_share": max(companies.values()) / n, "n_ral_companies": len(ral_companies),
+            "ral_top_share": max(ral_companies.values()) / len(with_ral) if with_ral else 1.0,
+            "_companies": companies,
+        })
     return cells
 
 
@@ -140,8 +151,8 @@ def export_public():
           f"({len(cells) - len(public)} hidden by the protection rules)")
     con.execute("CREATE TABLE jobs_public AS SELECT * FROM src.v_jobs_public")
     meta = con.execute("""
-        SELECT MIN(first_seen), MAX(last_seen), COUNT(*) FILTER (WHERE is_active = 1),
-               COUNT(DISTINCT company_id) FILTER (WHERE is_active = 1)
+        SELECT MIN(first_seen), MAX(last_seen), COUNT(*) FILTER (WHERE is_active = 1 AND country IS NOT NULL),
+               COUNT(DISTINCT company_id) FILTER (WHERE is_active = 1 AND country IS NOT NULL)
         FROM jobs_public""").fetchone()
     meta_path = PUBLIC_DIR / "meta.json"
     meta_path.write_text(json.dumps({
@@ -154,7 +165,8 @@ def export_public():
     }, indent=1), encoding="utf-8")
     print(f"  {meta_path.relative_to(db.ROOT)}: dates and counts for the methodology section")
     labels_path = PUBLIC_DIR / "labels.json"
-    public_labels = {k: v for k, v in labels.ALL.items() if k != "sector"}
+    # sector and micro-sector stay private for now: too few companies per value to publish safely
+    public_labels = {k: v for k, v in labels.ALL.items() if k not in ("sector", "micro_sector")}
     public_labels["region"] = labels.REGION_EXTRA
     labels_path.write_text(json.dumps(public_labels, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"  {labels_path.relative_to(db.ROOT)}: readable labels for the filters")

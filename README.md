@@ -2,11 +2,11 @@
 
 Since 7 June 2026, Legislative Decree 96/2026 requires anyone who publishes a job ad in Italy to state the starting pay or a pay range. This project measures how well the rule is followed. It collects the ads published on the career sites of large companies hiring in Italy and counts how many give a figure, how many only use phrases like "pay commensurate with experience", and what salaries are offered by sector, function, seniority and region.
 
-Collection started on 4 October 2026. As of 6 October: 290 companies analyzed, 76 with ads collected, about 2,900 ads in Italy. The results are published on a [web page](https://sollaigab.github.io/Salary_Compliance/) with data aggregated by sector, which does not allow anyone to trace them back to single companies.
+Collection started on 4 October 2026. As of 29 October: 681 companies analyzed, 152 with ads collected, about 12,800 ads in Italy, Germany, France and the Netherlands. The results are published on a [web page](https://sollaigab.github.io/Salary_Compliance/) with data aggregated by sector, which does not allow anyone to trace them back to single companies.
 
 ## What the page shows
 
-The page is online at https://sollaigab.github.io/Salary_Compliance/. Its source is in `webapp/`, and it shows the share of ads that state the pay, the median salary, and a comparison between ads published before and after the law came into force. The data can be filtered by period and sector, and downloaded as CSV (`webapp/data/aggregates.csv`).
+The page is online at https://sollaigab.github.io/Salary_Compliance/. Its source is in `webapp/`, and it shows the share of ads that state the pay, the salaries offered by function, seniority, region and work arrangement, how many ads are on site, hybrid or remote, and a comparison between ads published before and after the law came into force. The data can be filtered by period, sector, job function and work arrangement, and downloaded as CSV (`webapp/data/aggregates.csv`).
 
 ![The page with the headline figure and the filters](docs/dashboard.png)
 
@@ -24,7 +24,7 @@ The page follows the device's light or dark theme and works on phones.
 The work has three steps.
 
 1. For each company on a private list of large employers in Italy, `discover_ats.py` finds the applicant tracking system (ATS) that hosts its ads. It looks for traces of the ATS on the career page, with a headless browser for pages built in JavaScript, and tries the most likely company names on the public APIs.
-2. `crawl_jobs.py` downloads the ads, keeps those located in Italy or remote, and classifies them: ISTAT municipality of the location, function, seniority, contract type, workplace type and pay.
+2. `crawl_jobs.py` downloads the ads, keeps those located in Italy, Germany, the Netherlands or France (or remote in Europe), and classifies them: municipality of the location (ISTAT, Eurostat), function, seniority, contract type, workplace type and pay. The rules read Italian, English, German, French and Dutch.
 3. `export.py` computes the aggregates published on the page, applying the protection rules described below.
 
 Only public sources are used, with no login:
@@ -73,15 +73,16 @@ The public page contains no single ads, and no company names, titles or links. T
 - a combination (for example "Finance and insurance, Lombardia") appears only if it covers at least 5 ads from at least 3 companies;
 - no company can have more than 70% of the combination's ads, otherwise the figure would in practice describe that company;
 - salary medians follow the same thresholds;
-- if only one combination in a group is hidden, the smallest of the others is hidden too, so it cannot be worked out by subtracting from the total.
+- if only one combination in a group is hidden, the smallest of the others is hidden too, so it cannot be worked out by subtracting from the total;
+- a filtered figure is hidden when removing the filter would leave a small group: "Finance" minus "Finance, data roles" must not single out the few ads of one company. For the period it is the figure over all ads that is hidden, so the post-law results stay complete.
 
-With the October 2026 data these rules hide about 320 of 780 combinations.
+With the October 2026 data, and the four filters combined, about 13,200 of 65,000 combinations are published.
 
 ## Limits
 
 - Collection started on 4 October 2026 and only sees the ads online from that day. Ads published before the law and still online do not represent the market of that time.
 - The publication date means slightly different things across ATSs: sometimes it is the first publication, sometimes a repost or the latest update.
-- The results describe the 76 companies with ads collected, not the whole Italian job market. Companies whose ATS has no public source are excluded.
+- The results describe the 152 companies with ads collected, not the whole job market of the four countries. Companies whose ATS has no public source are excluded.
 - Pay and seniority are extracted with automatic rules. Their accuracy is measured on a sample of ads checked by hand with `validate_salary.py`.
 
 ## How it was built
@@ -100,7 +101,7 @@ lib/                     HTTP requests, ATSs, locations, classification, protect
 sql/                     database schema and views
 scripts/                 scheduled update on Windows
 webapp/                  web page and aggregate data
-data/reference/          ISTAT list of Italian municipalities and population
+data/reference/          ISTAT and Eurostat lists of municipalities, with population
 tests/                   tests
 ```
 
@@ -110,6 +111,7 @@ The company list, the ATS registry and the database of ads stay private and are 
 
 - ISTAT, list of Italian municipalities, CC BY 4.0 license (`data/reference/comuni_istat.csv`)
 - comuni-json by Matteo Contrini, MIT license, for municipality population (`data/reference/comuni_popolazione.json`)
+- Eurostat, Local Administrative Units (LAU) 2023 and NUTS 2021 classification, reused under the Eurostat copyright and reuse policy with attribution (downloaded automatically into `data/reference/` on the first crawl, not kept in git because of their size)
 
 ## License
 

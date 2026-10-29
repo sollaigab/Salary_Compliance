@@ -1,4 +1,11 @@
 {
+ "country": {
+  "IT": "Italy",
+  "DE": "Germany",
+  "NL": "Netherlands",
+  "FR": "France",
+  "not_stated": "Remote in Europe"
+ },
  "macro_sector": {
   "finance": "Finance and insurance",
   "consulting": "Consulting",

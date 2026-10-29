@@ -16,3 +16,6 @@ data/companies_seed.csv
 data/ats_registry.csv
 data/manual_overrides.csv
 data/backup/
+
+# Eurostat lists (15 MB): downloaded automatically on the first crawl
+data/reference/eurostat_*.xlsx
