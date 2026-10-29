@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     department             TEXT,          -- as the ATS writes it
     job_function           TEXT,          -- normalized: data, engineering, sales, marketing, finance, hr, legal, operations, ...
     seniority              TEXT,          -- intern, junior, mid, senior, lead, manager, director, executive
-    seniority_source       TEXT,          -- title / experience (from the years required) / not_stated
+    seniority_source       TEXT,          -- title / experience (from the years required) / contract (intern, apprentice) / not_stated
     experience_years       INTEGER,       -- minimum years of experience required, if stated
     contract_type          TEXT,          -- permanent, fixed_term, internship, apprenticeship, freelance, agency
     work_schedule          TEXT,          -- full_time, part_time

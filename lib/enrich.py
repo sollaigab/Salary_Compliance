@@ -264,7 +264,7 @@ CONTRACT_RULES = [
 # "unbefristet" (permanent) is not matched by "befristet": \b needs a non-letter before it
 CONTRACT_RULES = _merge_rules(CONTRACT_RULES, {
     "internship": r"praktikum (?:im|in|als|bereich)|pflichtpraktikum|praktikant\w*|werkstudent\w*|stagiaire|stagiair\w*",
-    "apprenticeship": r"(?<!abgeschlossene )(?<!abgeschlossener )ausbildung (?:zum|zur)|ausbildungsplatz"
+    "apprenticeship": r"(?<!abgeschlossene )(?<!abgeschlossener )ausbildung (?:zum|zur)|^ausbildung\b|ausbildungsplatz"
                       r"|auszubildend\w*|azubi\w*|duales studium|alternance|alternant\w*"
                       r"|apprentissage|contrat de professionnalisation|leerwerktraject|bbl",
     "fixed_term": r"befristet\w*|elternzeitvertretung|(?:en|un|contrat|poste en) cdd|cdd (?:de )?\d+ mois"

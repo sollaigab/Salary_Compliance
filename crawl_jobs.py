@@ -84,6 +84,8 @@ def derived_fields(title: str, description: str, department, employment_type, st
     country: the English name of the ad's country (monthly pay is annualized by country)."""
     level, level_source, years = seniority_with_source(title, description)
     contract = contract_type(employment_type, title, description)
+    if level_source == "not_stated" and contract in ("internship", "apprenticeship"):
+        level, level_source = "intern", "contract"   # "Ausbildung zum ...", "Stage ...": no level in the title
     salary = salary_fields(structured, f"{title} {description}",
                            is_internship=(level == "intern" or contract == "internship"),
                            country=COUNTRY_CODES.get(country, "IT"))

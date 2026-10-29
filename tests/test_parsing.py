@@ -315,6 +315,20 @@ def test_pay_real_misses():
     assert parse_salary("We pay attention to 3 things") is None
 
 
+def test_pay_misses_de_fr():
+    # benefits and deal sizes found in the October 2026 check of the German and French ads
+    assert parse_salary("75 % du titre de transport remboursé ou 600€ de forfait mobilité douce") is None
+    assert parse_salary("Accès à la salle de sport pour 5€/mois") is None
+    assert parse_salary("focusing on accounts spending €10K or more in annual recurring revenue") is None
+    assert parse_salary("Own a portfolio of up to 40 enterprise accounts at €10K+ ARR") is None
+    assert parse_salary("Paris 8e arr. Salaire 45 000 € par an")["min"] == 45000
+    assert parse_salary("fixed-price packages (Lite from €350K, Core from €600K)") is None
+    s = parse_salary("Base salary range (Italy) : €97,000 - €146,000 Base salary range (Germany) : "
+                     "€112,500 - €168,750", country="DE")
+    assert (s["min"], s["max"]) == (112500, 168750)
+    assert enrich.contract_type(None, "Ausbildung 2027 - Mechatroniker (m/w/d)", "") == "apprenticeship"
+
+
 def test_internship_on_12_payments():
     s = enrich.salary_fields(None, "Stage con rimborso spese di 1.000 € al mese", is_internship=True)
     assert s["ral_min_annual"] == 12000

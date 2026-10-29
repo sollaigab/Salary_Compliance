@@ -76,7 +76,8 @@ _BENEFIT_RE = re.compile(
     r"|parent\w*|genitori\w*|referral|bonus (?:for|per)"
     r"|jobticket|essenszuschuss|essensgutschein\w*|fahrtkosten\w*|zuschuss|tickets? restaurant|mutuelle"
     r"|prime de (?:cooptation|parrainage)|reiskosten\w*|thuiswerkvergoeding|onkostenvergoeding"
-    r"|\w*pr[äa]mie|mitarbeiter werben|rabatt\w*|jobrad|corporate benefits)\b", re.IGNORECASE)
+    r"|\w*pr[äa]mie|mitarbeiter werben|rabatt\w*|jobrad|corporate benefits"
+    r"|forfait mobilit\w*|titre de transport|salle de sport|fitness|gym)\b", re.IGNORECASE)
 _PAY_WORD_RE = re.compile(r"\bRAL\b|retribu|salar|stipend|compens|\bpay\b|lord|rimborso|reimburs|indennit|allowance"
                           r"|\bstage\b|tirocin|intern|monthly|mensil|al mese"
                           r"|gehalt|verg[uü]tung|salaire|r[ée]mun[ée]ration|brutto|bruto|\bbrut|praktik|werkstudent"
@@ -86,6 +87,9 @@ _PAY_WORD_RE = re.compile(r"\bRAL\b|retribu|salar|stipend|compens|\bpay\b|lord|r
 
 # an amount in millions or billions written with a letter right after it: "€800M+ in ARR", "€2B", "5 Mio. €"
 _MILLIONS_AFTER_RE = re.compile(r"\s?(?:[MB]\b|bn\b|mio\b|mrd\b|M\+)", re.IGNORECASE)
+# deal and account sizes in sales ads: "accounts spending €10K or more in annual recurring revenue",
+# "accounts at €10K+ ARR" (case-sensitive: "arr." is a Paris arrondissement), "fixed-price packages (Lite from €350K"
+_DEAL_RE = re.compile(r"\b(?:recurring revenue|(?-i:ARR)|fixed[- ]price|deal size|contract value)\b", re.IGNORECASE)
 
 
 def _is_corporate(text: str, m) -> bool:
@@ -94,7 +98,8 @@ def _is_corporate(text: str, m) -> bool:
     word_start = max(text.rfind(" ", 0, m.start()), text.rfind("\n", 0, m.start())) + 1
     in_link = re.match(r"(?:https?://|www\.)\S*$", text[word_start:m.start() + 1]) is not None
     return bool(in_link or _CORPORATE_RE.search(text[m.start(): m.end() + 25])
-                or _MILLIONS_AFTER_RE.match(text, m.end()))
+                or _MILLIONS_AFTER_RE.match(text, m.end())
+                or _DEAL_RE.search(text[max(0, m.start() - 60): m.end() + 45]))
 
 
 def _is_benefit(text: str, m) -> bool:
@@ -183,8 +188,9 @@ def _country_band(text: str, country: str):
     words = COUNTRY_LABELS.get(country or "")
     if not words:
         return None
-    m = re.search(rf"\b(?:{words})\s*:\s*(?:€|EUR)?\s*(?P<lo>{_NUM})\s*(?:€|EUR)?\s*[-–]\s*(?:€|EUR)?\s*(?P<hi>{_NUM})"
-                  r"\s*(?:€|EUR)", text, re.IGNORECASE)
+    # "Germany: 97,600.00 EUR - 146,400.00 EUR" or "Base salary range (Germany) : €112,500 - €168,750"
+    m = re.search(rf"\b(?:{words})\)?\s*:\s*(?:(?P<cur>€|EUR)\s*)?(?P<lo>{_NUM})\s*(?:€|EUR)?\s*[-–]\s*(?:€|EUR)?\s*"
+                  rf"(?P<hi>{_NUM})(?(cur)|\s*(?:€|EUR))", text, re.IGNORECASE)
     if not m:
         return None
     lo, hi = to_number(m.group("lo")), to_number(m.group("hi"))

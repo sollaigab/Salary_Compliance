@@ -60,7 +60,7 @@ Figures are converted to gross annual salary in euros. In Italy annual pay is us
 
 ### Seniority
 
-The level is read from the ad title ("Senior", "Junior", "Head of"). When the title does not say, it is derived from the years of experience the text asks for: under 2 years is junior, 2 to 4 is mid-level, 5 or more is senior. About one ad in three states neither the level nor the years of experience.
+The level is read from the ad title ("Senior", "Junior", "Head of"). When the title does not say, it is derived from the years of experience the text asks for: under 2 years is junior, 2 to 4 is mid-level, 5 or more is senior. Internships and apprenticeships (such as a German Ausbildung or a French alternance) with no level in the title count as interns. About one ad in three states neither the level nor the years of experience.
 
 ### Publication date
 
